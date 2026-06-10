@@ -6,6 +6,8 @@ use App\Http\Middleware\ChurchAdminMiddleware;
 use App\Http\Middleware\MinistryAdminMiddleware;
 use App\Http\Middleware\RateLimitMiddleware;
 use App\Http\Middleware\ZoneAdminMiddleware;
+use App\Http\Middleware\IdempotencyMiddleware;
+use App\Http\Middleware\ApiVersionMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -39,6 +41,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'activity.logger'   => ActivityLoggerMiddleware::class,
             'rate.limit'        => RateLimitMiddleware::class,
             'cache.response'    => CacheResponseMiddleware::class,
+            'idempotency'    => IdempotencyMiddleware::class,
+            'api.version'    => ApiVersionMiddleware::class,
         ]);
 
     })
