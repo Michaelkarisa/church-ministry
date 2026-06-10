@@ -1334,7 +1334,7 @@ const apiBaseUrl: string =
   (typeof process !== 'undefined'
     ? process.env['NEXT_PUBLIC_API_URL'] ?? process.env['REACT_APP_API_URL']
     : undefined) ??
-  'http://localhost:8000'
+  'http://localhost:8000/v1'
 
 const api = createApiClient(apiBaseUrl)
 
