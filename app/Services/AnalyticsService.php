@@ -125,14 +125,14 @@ class AnalyticsService
         return ['period' => $period, 'group_by' => $groupBy, 'trend' => $trend];
     }
 
-    public function churchTopMembers(string $churchId, array $params = []): array
+       public function churchTopMembers(string $churchId, array $params = []): array
     {
         $period = $this->periodClause($params);
         $limit  = min((int) ($params['limit'] ?? 10), 50);
 
-        $members = Transaction::where('church_id', $churchId)
-            ->whereBetween('transaction_date', [$period['from'], $period['to']])
-            ->whereNotNull('member_id')
+        $members = Transaction::where('transactions.church_id', $churchId) // <-- Prefixed
+            ->whereBetween('transactions.transaction_date', [$period['from'], $period['to']]) // <-- Prefixed
+            ->whereNotNull('transactions.member_id') // <-- Prefixed
             ->join('members', 'transactions.member_id', '=', 'members.id')
             ->select(
                 'members.id',
@@ -470,6 +470,7 @@ class AnalyticsService
             ->orderByDesc('count')
             ->get();
 
+        // Removed the pasted SQL error message from here
         $failedRequests = (clone $base)
             ->where('status_code', '>=', 400)
             ->count();
