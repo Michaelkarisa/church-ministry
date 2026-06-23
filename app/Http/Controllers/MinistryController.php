@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Ministry;
+use App\Services\MinistryService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,20 +11,18 @@ class MinistryController extends Controller
 {
     use ApiResponse;
 
+    public function __construct(private MinistryService $ministryService) {}
+
     /**
      * GET /api/ministry
-     * Returns the single ministry record with zone/church counts.
      */
     public function show(): JsonResponse
     {
-        $ministry = Ministry::current()->loadCount(['zones', 'churches']);
-        return $this->successResponse($ministry);
+        return $this->successResponse($this->ministryService->getCurrent());
     }
 
     /**
      * PUT /api/ministry
-     * Updates the single ministry's profile fields.
-     * code is intentionally excluded — it cannot be changed after creation.
      */
     public function update(Request $request): JsonResponse
     {
@@ -42,9 +40,8 @@ class MinistryController extends Controller
             'founded_year'  => ['nullable', 'integer', 'min:1800', 'max:' . date('Y')],
         ]);
 
-        $ministry = Ministry::current();
-        $ministry->update($request->validated());
+        $ministry = $this->ministryService->update($request->validated());
 
-        return $this->successResponse($ministry->fresh(), 'Ministry profile updated.');
+        return $this->successResponse($ministry, 'Ministry profile updated.');
     }
 }

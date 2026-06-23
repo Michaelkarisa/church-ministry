@@ -23,8 +23,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health:   '/up',
         // api routes split into two files: main API + admin-only API
         then: function () {
+            Route::middleware('api')->group(base_path('routes/auth.php'));
+             Route::middleware('api')->group(base_path('routes/analytics.php'));
+              Route::middleware('api')->group(base_path('routes/system.php'));
             Route::middleware('api')->group(base_path('routes/api.php'));
-           // Route::middleware('api')->group(base_path('routes/admin.php'));
         },
     )
     ->withCommands([

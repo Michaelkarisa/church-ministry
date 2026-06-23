@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TransactionType;
+use App\Services\TransactionTypeService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,20 +13,20 @@ class TransactionTypeController extends Controller
 {
     use ApiResponse;
 
-    /** GET /api/transaction-types — public to all admins */
+    public function __construct(private TransactionTypeService $transactionTypeService) {}
+
+    /** GET /api/transaction-types */
     public function index(Request $request): JsonResponse
     {
-        $types = TransactionType::query()
-            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
-            ->when($request->category, fn ($q) => $q->where('category', $request->category))
-            ->orderBy('display_order')
-            ->orderBy('name')
-            ->get();
+        $types = $this->transactionTypeService->index([
+            'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
+            'category'  => $request->category,
+        ]);
 
         return $this->successResponse($types);
     }
 
-    /** POST /api/transaction-types — ministry admin only */
+    /** POST /api/transaction-types */
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -37,17 +38,20 @@ class TransactionTypeController extends Controller
             'is_active'     => ['boolean'],
         ]);
 
-        $type = TransactionType::create($request->validated());
+        $type = $this->transactionTypeService->store($request->validated());
+
         return $this->createdResponse($type, 'Transaction type created.');
     }
 
-    /** GET /api/transaction-types/{type} */
+    /** GET /api/transaction-types/{transactionType} */
     public function show(TransactionType $transactionType): JsonResponse
     {
-        return $this->successResponse($transactionType->loadCount('transactions'));
+        return $this->successResponse(
+            $this->transactionTypeService->show($transactionType)
+        );
     }
 
-    /** PUT /api/transaction-types/{type} */
+    /** PUT /api/transaction-types/{transactionType} */
     public function update(Request $request, TransactionType $transactionType): JsonResponse
     {
         $request->validate([
@@ -59,21 +63,19 @@ class TransactionTypeController extends Controller
             'is_active'     => ['boolean'],
         ]);
 
-        $transactionType->update($request->validated());
-        return $this->successResponse($transactionType->fresh(), 'Transaction type updated.');
+        $type = $this->transactionTypeService->update($transactionType, $request->validated());
+
+        return $this->successResponse($type, 'Transaction type updated.');
     }
 
-    /** DELETE /api/transaction-types/{type} */
+    /** DELETE /api/transaction-types/{transactionType} */
     public function destroy(TransactionType $transactionType): JsonResponse
     {
-        if ($transactionType->transactions()->exists()) {
-            return $this->errorResponse(
-                'Cannot delete a transaction type that has existing financial records.',
-                422
-            );
+        try {
+            $this->transactionTypeService->destroy($transactionType);
+            return $this->noContentResponse('Transaction type deleted.');
+        } catch (\DomainException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 422);
         }
-
-        $transactionType->delete();
-        return $this->noContentResponse('Transaction type deleted.');
     }
 }

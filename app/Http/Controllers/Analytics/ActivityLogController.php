@@ -3,59 +3,159 @@
 namespace App\Http\Controllers\Analytics;
 
 use App\Http\Controllers\Controller;
-use App\Models\ActivityLog;
-use App\Services\AnalyticsService;
+use App\Services\ActivityLogService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-// Scoped by role
 class ActivityLogController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private AnalyticsService $analytics) {}
+    public function __construct(private ActivityLogService $logService) {}
 
-    /** GET /api/activity-logs */
+    // ---------------------------------------------------------------
+    // Log listing
+    // ---------------------------------------------------------------
+
+    /**
+     * GET /api/analytics/logs
+     *
+     * Paginated activity log listing, role-scoped.
+     * Query params: module, action, user_id, from, to,
+     *               status_code, method, record_type, search, per_page
+     */
     public function index(Request $request): JsonResponse
     {
-        $user    = $request->user();
         $perPage = min((int) $request->get('per_page', 20), 100);
-        $scope   = $user->accessScope();
 
-        $query = ActivityLog::with('user:id,name,email')
-            ->when($request->module, fn ($q) => $q->where('module', $request->module))
-            ->when($request->action, fn ($q) => $q->where('action', $request->action))
-            ->when($request->user_id && $user->isMinistryAdmin(), fn ($q) => $q->where('user_id', $request->user_id))
-            ->when($request->from && $request->to, fn ($q) =>
-                $q->whereBetween('performed_at', [$request->from . ' 00:00:00', $request->to . ' 23:59:59'])
-            );
-
-        // Scope by role
-        match ($scope['level']) {
-            'ministry' => null, // sees all
-            'zone'     => $query->where('zone_id', $scope['zone_id']),
-            default    => $query->where('church_id', $scope['church_id']),
-        };
-
-        return $this->successResponse(
-            $query->orderByDesc('performed_at')->paginate($perPage)
+        $paginator = $this->logService->paginate(
+            $request->user(),
+            [
+                'module'      => $request->module,
+                'action'      => $request->action,
+                'user_id'     => $request->user_id,
+                'from'        => $request->from,
+                'to'          => $request->to,
+                'status_code' => $request->status_code,
+                'method'      => $request->method_filter, // 'method' is reserved on Request
+                'record_type' => $request->record_type,
+                'search'      => $request->search,
+            ],
+            $perPage,
         );
+
+        return $this->successResponse($paginator);
     }
 
-    /** GET /api/activity-logs/stats */
+    // ---------------------------------------------------------------
+    // Analytics endpoints
+    // ---------------------------------------------------------------
+
+    /**
+     * GET /api/analytics/logs/stats
+     *
+     * Activity breakdown: by module, by action, top users, trend.
+     * Query params: from, to, period (days), group_by (day|week|month)
+     */
     public function stats(Request $request): JsonResponse
     {
         return $this->successResponse(
-            $this->analytics->activityStats($request->user(), $request->query())
+            $this->logService->stats($request->user(), $request->query())
         );
     }
 
-    /** GET /api/activity-logs/usage */
+    /**
+     * GET /api/analytics/logs/usage
+     *
+     * API usage metrics: error rate, status codes, hourly distribution,
+     * top endpoints, active unique users.
+     * Query params: from, to, period (days)
+     */
     public function usage(Request $request): JsonResponse
     {
         return $this->successResponse(
-            $this->analytics->usageStats($request->user(), $request->query())
+            $this->logService->usage($request->user(), $request->query())
+        );
+    }
+
+    /**
+     * GET /api/analytics/logs/login-activity
+     *
+     * Login/logout timeline, peak hours, unique sessions.
+     * Query params: from, to, period (days), group_by (day|week|month)
+     */
+    public function loginActivity(Request $request): JsonResponse
+    {
+        return $this->successResponse(
+            $this->logService->loginActivity($request->user(), $request->query())
+        );
+    }
+
+    /**
+     * GET /api/analytics/logs/errors
+     *
+     * 4xx / 5xx error breakdown by code, endpoint, and user.
+     * Restricted to ZoneAdmin and above.
+     * Query params: from, to, period (days)
+     */
+    public function errorLogs(Request $request): JsonResponse
+    {
+        if (! $request->user()->isAtLeast('zone_admin')) {
+            return $this->forbiddenResponse('Error log analytics require Zone Administrator access.');
+        }
+
+        return $this->successResponse(
+            $this->logService->errorLogs($request->user(), $request->query())
+        );
+    }
+
+    /**
+     * GET /api/analytics/logs/audit-trail
+     *
+     * Full ordered change history for a specific record or user.
+     * Params: record_type + record_id (any role), user_id (MinistryAdmin only),
+     *         module, action, per_page
+     */
+    public function auditTrail(Request $request): JsonResponse
+    {
+        $request->validate([
+            'record_type' => ['nullable', 'string'],
+            'record_id'   => ['nullable', 'uuid'],
+            'user_id'     => ['nullable', 'uuid'],
+        ]);
+
+        $hasRecord = $request->filled('record_type') && $request->filled('record_id');
+        $hasUser   = $request->filled('user_id');
+
+        if (! $hasRecord && ! $hasUser) {
+            return $this->errorResponse(
+                'Provide either record_type + record_id, or user_id to fetch an audit trail.',
+                422
+            );
+        }
+
+        if ($hasUser && ! $request->user()->isMinistryAdmin()) {
+            return $this->forbiddenResponse('Filtering audit trails by user requires Ministry Administrator access.');
+        }
+
+        $perPage = min((int) $request->get('per_page', 25), 100);
+
+        return $this->successResponse(
+            $this->logService->auditTrail($request->user(), $request->query(), $perPage)
+        );
+    }
+
+    /**
+     * GET /api/analytics/logs/top-actors
+     *
+     * Most active users ranked by action count for the period.
+     * Query params: from, to, period (days), module, action, limit (max 50)
+     */
+    public function topActors(Request $request): JsonResponse
+    {
+        return $this->successResponse(
+            $this->logService->topActors($request->user(), $request->query())
         );
     }
 }

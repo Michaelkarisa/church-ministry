@@ -15,56 +15,10 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\ZoneController;
 use Illuminate\Support\Facades\Route;
 
-/*
-|--------------------------------------------------------------------------
-| Church Ministry Platform API Routes
-|--------------------------------------------------------------------------
-|
-| Hierarchy:    Ministry → Zone → Church → Member / Transaction
-| Auth:         Laravel Sanctum (Bearer token)
-| Versioning:   /api/v1/...  — registered via 'api.version:v1' middleware
-|               Bump to v2 by duplicating the outer group + changing prefix.
-| Idempotency:  All authenticated POST requests require an Idempotency-Key
-|               header. Retries with the same key replay the original result.
-| Middleware:   ministry.admin (level 1) | zone.admin (level 2) | church.admin (level 3)
-|               activity.logger | rate.limit:{type} | cache.response | idempotency
-|
-*/
 
-// =============================================================================
-// v1  —  All routes live under /api/v1
-// =============================================================================
 Route::prefix('v1')
      ->middleware('api.version:v1')
      ->group(function () {
-
-    // =========================================================================
-    // PUBLIC — No authentication required
-    // (idempotency is NOT applied here; login/reset are inherently idempotent
-    //  or already guarded by rate-limiting)
-    // =========================================================================
-    Route::prefix('auth')->group(function () {
-
-        Route::post('login',                [AuthController::class,          'login'])
-             ->middleware('rate.limit:auth');
-
-        Route::post('forgot-password',      [PasswordResetController::class, 'sendResetLink'])
-             ->middleware('rate.limit:auth');
-
-        Route::post('reset-password',       [PasswordResetController::class, 'resetPassword'])
-             ->middleware('rate.limit:auth');
-
-        Route::get('reset-password/verify', [PasswordResetController::class, 'verifyToken']);
-    });
-
-
-    // =========================================================================
-    // AUTHENTICATED — Requires valid Sanctum token
-    //
-    // 'idempotency' is last in the chain so it only runs after auth succeeds.
-    // The middleware self-skips GET/PUT/DELETE and the exempt auth sub-paths
-    // (logout, refresh), so adding it here covers every POST automatically.
-    // =========================================================================
     Route::middleware([
             'auth:sanctum',
             'church.admin',
@@ -74,19 +28,7 @@ Route::prefix('v1')
          ])
          ->group(function () {
 
-        // -------------------------------------------------------------------
-        // Auth
-        // -------------------------------------------------------------------
-        Route::prefix('auth')->group(function () {
-            Route::post('logout',          [AuthController::class, 'logout']);   // exempt in IdempotencyMiddleware
-            Route::get('me',               [AuthController::class, 'me']);
-            Route::put('profile',          [AuthController::class, 'updateProfile']);
-            Route::put('change-password',  [AuthController::class, 'changePassword']);
-            Route::post('refresh',         [AuthController::class, 'refresh']);  // exempt in IdempotencyMiddleware
-        });
-
-
-        // -------------------------------------------------------------------
+              // -------------------------------------------------------------------
         // Transaction Types — all admins can view; only ministry can manage
         // -------------------------------------------------------------------
         Route::get('transaction-types',                       [TransactionTypeController::class, 'index']);

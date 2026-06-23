@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreChurchRequest;
 use App\Models\Church;
+use App\Services\ChurchService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,29 +13,24 @@ class ChurchController extends Controller
 {
     use ApiResponse;
 
+    public function __construct(private ChurchService $churchService) {}
+
     /** GET /api/churches */
     public function index(Request $request): JsonResponse
     {
-        $user    = $request->user();
         $perPage = min((int) $request->get('per_page', 15), 100);
 
-        $query = Church::with('zone')
-            ->withCount(['members' => fn ($q) => $q->where('is_active', true)])
-            ->when($request->search, fn ($q) =>
-                $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('code', 'like', "%{$request->search}%")
-            )
-            ->when($request->zone_id, fn ($q) => $q->where('zone_id', $request->zone_id))
-            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')));
+        $paginator = $this->churchService->index(
+            $request->user(),
+            [
+                'search'    => $request->search,
+                'zone_id'   => $request->zone_id,
+                'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
+            ],
+            $perPage,
+        );
 
-        // Scope by role
-        if ($user->isZoneAdmin()) {
-            $query->where('zone_id', $user->zone_id);
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('id', $user->church_id);
-        }
-
-        return $this->successResponse($query->orderBy('name')->paginate($perPage));
+        return $this->successResponse($paginator);
     }
 
     /** POST /api/churches */
@@ -42,41 +38,29 @@ class ChurchController extends Controller
     {
         $user = $request->user();
 
-        // ZoneAdmin can only create churches in their zone
         if ($user->isZoneAdmin() && $request->zone_id !== $user->zone_id) {
             return $this->forbiddenResponse('You can only create churches within your zone.');
         }
 
-        $church = Church::create($request->validated());
+        $church = $this->churchService->store($request->validated());
+
         return $this->createdResponse($church->load('zone'), 'Church created successfully.');
     }
 
     /** GET /api/churches/{church} */
     public function show(Request $request, Church $church): JsonResponse
     {
-        $user = $request->user();
-
-        if ($user->isZoneAdmin() && $church->zone_id !== $user->zone_id) {
-            return $this->forbiddenResponse();
-        }
-        if ($user->isChurchAdmin() && $church->id !== $user->church_id) {
+        if (! $this->churchService->canAccess($request->user(), $church)) {
             return $this->forbiddenResponse();
         }
 
-        return $this->successResponse(
-            $church->load(['zone.ministry'])->loadCount(['members' => fn ($q) => $q->where('is_active', true)])
-        );
+        return $this->successResponse($this->churchService->show($church));
     }
 
     /** PUT /api/churches/{church} */
     public function update(Request $request, Church $church): JsonResponse
     {
-        $user = $request->user();
-
-        if ($user->isZoneAdmin() && $church->zone_id !== $user->zone_id) {
-            return $this->forbiddenResponse();
-        }
-        if ($user->isChurchAdmin() && $church->id !== $user->church_id) {
+        if (! $this->churchService->canAccess($request->user(), $church)) {
             return $this->forbiddenResponse();
         }
 
@@ -94,21 +78,19 @@ class ChurchController extends Controller
             'is_active'          => ['boolean'],
         ]);
 
-        $church->update($request->validated());
-        return $this->successResponse($church->fresh()->load('zone'), 'Church updated successfully.');
+        $church = $this->churchService->update($church, $request->validated());
+
+        return $this->successResponse($church, 'Church updated successfully.');
     }
 
     /** DELETE /api/churches/{church} */
     public function destroy(Church $church): JsonResponse
     {
-        if ($church->members()->exists() || $church->transactions()->exists()) {
-            return $this->errorResponse(
-                'Cannot delete a church with existing members or financial records.',
-                422
-            );
+        try {
+            $this->churchService->destroy($church);
+            return $this->noContentResponse('Church deleted successfully.');
+        } catch (\DomainException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 422);
         }
-
-        $church->delete();
-        return $this->noContentResponse('Church deleted successfully.');
     }
 }

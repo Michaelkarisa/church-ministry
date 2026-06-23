@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreZoneRequest;
-use App\Models\Ministry;
 use App\Models\Zone;
+use App\Services\ZoneService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,34 +13,29 @@ class ZoneController extends Controller
 {
     use ApiResponse;
 
+    public function __construct(private ZoneService $zoneService) {}
+
     /** GET /api/zones */
     public function index(Request $request): JsonResponse
     {
-        $user    = $request->user();
         $perPage = min((int) $request->get('per_page', 15), 100);
 
-        $query = Zone::withCount('churches')
-            ->when($request->search, fn ($q) =>
-                $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('code', 'like', "%{$request->search}%")
-            )
-            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')));
+        $paginator = $this->zoneService->index(
+            $request->user(),
+            [
+                'search'    => $request->search,
+                'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
+            ],
+            $perPage,
+        );
 
-        // ZoneAdmin sees only their zone
-        if ($user->isZoneAdmin()) {
-            $query->where('id', $user->zone_id);
-        }
-
-        return $this->successResponse($query->orderBy('name')->paginate($perPage));
+        return $this->successResponse($paginator);
     }
 
     /** POST /api/zones */
     public function store(StoreZoneRequest $request): JsonResponse
     {
-        $zone = Zone::create(array_merge(
-            $request->validated(),
-            ['ministry_id' => Ministry::currentId()]   // always the single ministry
-        ));
+        $zone = $this->zoneService->store($request->validated());
 
         return $this->createdResponse($zone, 'Zone created successfully.');
     }
@@ -54,11 +49,7 @@ class ZoneController extends Controller
             return $this->forbiddenResponse();
         }
 
-        return $this->successResponse(
-            $zone->load(['churches' => fn ($q) => $q->withCount([
-                'members' => fn ($m) => $m->where('is_active', true),
-            ])])
-        );
+        return $this->successResponse($this->zoneService->show($zone));
     }
 
     /** PUT /api/zones/{zone} */
@@ -72,24 +63,21 @@ class ZoneController extends Controller
             'phone'     => ['nullable', 'string', 'max:20'],
             'email'     => ['nullable', 'email'],
             'is_active' => ['boolean'],
-            // ministry_id intentionally excluded — immutable
         ]);
 
-        $zone->update($request->validated());
-        return $this->successResponse($zone->fresh(), 'Zone updated successfully.');
+        $zone = $this->zoneService->update($zone, $request->validated());
+
+        return $this->successResponse($zone, 'Zone updated successfully.');
     }
 
     /** DELETE /api/zones/{zone} */
     public function destroy(Zone $zone): JsonResponse
     {
-        if ($zone->churches()->exists()) {
-            return $this->errorResponse(
-                'Cannot delete a zone with existing churches. Reassign or delete the churches first.',
-                422
-            );
+        try {
+            $this->zoneService->destroy($zone);
+            return $this->noContentResponse('Zone deleted successfully.');
+        } catch (\DomainException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getCode() ?: 422);
         }
-
-        $zone->delete();
-        return $this->noContentResponse('Zone deleted successfully.');
     }
 }

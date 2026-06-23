@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMemberRequest;
 use App\Models\Member;
+use App\Services\MemberService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,34 +14,25 @@ class MemberController extends Controller
 {
     use ApiResponse;
 
+    public function __construct(private MemberService $memberService) {}
+
     /** GET /api/members */
     public function index(Request $request): JsonResponse
     {
-        $user    = $request->user();
         $perPage = min((int) $request->get('per_page', 15), 100);
 
-        $query = Member::with('church')
-            ->when($request->search, fn ($q) =>
-                $q->where('first_name', 'like', "%{$request->search}%")
-                  ->orWhere('last_name', 'like', "%{$request->search}%")
-                  ->orWhere('member_number', 'like', "%{$request->search}%")
-                  ->orWhere('email', 'like', "%{$request->search}%")
-                  ->orWhere('phone', 'like', "%{$request->search}%")
-            )
-            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
-            ->when($request->gender, fn ($q) => $q->where('gender', $request->gender))
-            ->when($request->church_id, fn ($q) => $q->where('church_id', $request->church_id));
-
-        // Scope by role
-        if ($user->isZoneAdmin()) {
-            $query->whereHas('church', fn ($q) => $q->where('zone_id', $user->zone_id));
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('church_id', $user->church_id);
-        }
-
-        return $this->successResponse(
-            $query->orderBy('first_name')->orderBy('last_name')->paginate($perPage)
+        $paginator = $this->memberService->index(
+            $request->user(),
+            [
+                'search'    => $request->search,
+                'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
+                'gender'    => $request->gender,
+                'church_id' => $request->church_id,
+            ],
+            $perPage,
         );
+
+        return $this->successResponse($paginator);
     }
 
     /** POST /api/members */
@@ -52,27 +44,25 @@ class MemberController extends Controller
             return $this->forbiddenResponse('You can only add members to your own church.');
         }
 
-        $member = Member::create($request->validated());
+        $member = $this->memberService->store($request->validated());
+
         return $this->createdResponse($member->load('church'), 'Member added successfully.');
     }
 
     /** GET /api/members/{member} */
     public function show(Request $request, Member $member): JsonResponse
     {
-        if (! $this->canAccess($request->user(), $member)) {
+        if (! $this->memberService->canAccess($request->user(), $member)) {
             return $this->forbiddenResponse();
         }
 
-        return $this->successResponse(
-            $member->load(['church.zone'])
-                   ->loadCount('transactions')
-        );
+        return $this->successResponse($this->memberService->show($member));
     }
 
     /** PUT /api/members/{member} */
     public function update(Request $request, Member $member): JsonResponse
     {
-        if (! $this->canAccess($request->user(), $member)) {
+        if (! $this->memberService->canAccess($request->user(), $member)) {
             return $this->forbiddenResponse();
         }
 
@@ -91,25 +81,20 @@ class MemberController extends Controller
             'is_active'       => ['boolean'],
         ]);
 
-        $member->update($request->validated());
-        return $this->successResponse($member->fresh()->load('church'), 'Member updated.');
+        $member = $this->memberService->update($member, $request->validated());
+
+        return $this->successResponse($member, 'Member updated.');
     }
 
     /** DELETE /api/members/{member} */
     public function destroy(Request $request, Member $member): JsonResponse
     {
-        if (! $this->canAccess($request->user(), $member)) {
+        if (! $this->memberService->canAccess($request->user(), $member)) {
             return $this->forbiddenResponse();
         }
 
-        $member->delete();
-        return $this->noContentResponse('Member deleted.');
-    }
+        $this->memberService->destroy($member);
 
-    private function canAccess($user, Member $member): bool
-    {
-        if ($user->isMinistryAdmin()) return true;
-        if ($user->isZoneAdmin())     return $member->church->zone_id === $user->zone_id;
-        return $member->church_id === $user->church_id;
+        return $this->noContentResponse('Member deleted.');
     }
 }
