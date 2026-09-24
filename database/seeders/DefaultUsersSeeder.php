@@ -28,7 +28,7 @@ class DefaultUsersSeeder extends Seeder
         // ---------------------------------------------------------------
         User::firstOrCreate(['email' => 'admin@ministry.ke'], [
             'name'        => 'Ministry Administrator',
-            'password'    => Hash::make('Admin@Kenya2024'),
+            'password'    => Hash::make('Admin@Kenya2026'),
             'role_id'     => $ministryRole->id,
             'ministry_id' => $ministryId,
             'is_active'   => true,
@@ -39,7 +39,7 @@ class DefaultUsersSeeder extends Seeder
         // ---------------------------------------------------------------
         User::firstOrCreate(['email' => 'zone@ministry.ke'], [
             'name'        => 'Zone Administrator',
-            'password'    => Hash::make('Zone@Kenya2024'),
+            'password'    => Hash::make('Zone@Kenya2026'),
             'role_id'     => $zoneRole->id,
             'ministry_id' => $ministryId,
             'zone_id'     => $zone?->id,
@@ -51,7 +51,7 @@ class DefaultUsersSeeder extends Seeder
         // ---------------------------------------------------------------
         User::firstOrCreate(['email' => 'church@ministry.ke'], [
             'name'        => 'Church Administrator',
-            'password'    => Hash::make('Church@Kenya2024'),
+            'password'    => Hash::make('Church@Kenya2026'),
             'role_id'     => $churchRole->id,
             'ministry_id' => $ministryId,
             'zone_id'     => $zone?->id,
@@ -63,9 +63,9 @@ class DefaultUsersSeeder extends Seeder
         $this->command->table(
             ['Role', 'Email', 'Password'],
             [
-                ['Ministry Admin', 'admin@ministry.ke',  'Admin@Kenya2024'],
-                ['Zone Admin',     'zone@ministry.ke',   'Zone@Kenya2024'],
-                ['Church Admin',   'church@ministry.ke', 'Church@Kenya2024'],
+                ['Ministry Admin', 'admin@ministry.ke',  'Admin@Kenya2026'],
+                ['Zone Admin',     'zone@ministry.ke',   'Zone@Kenya2026'],
+                ['Church Admin',   'church@ministry.ke', 'Church@Kenya2026'],
             ]
         );
     }
