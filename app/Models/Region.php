@@ -7,14 +7,15 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Zone extends Model
+class Region extends Model
 {
     use HasUuids, SoftDeletes;
 
     protected $fillable = [
-        'region_id', 'name', 'code',
+        'ministry_id', 'name', 'code',
         'address', 'phone', 'email', 'is_active',
     ];
 
@@ -26,36 +27,38 @@ class Zone extends Model
     // Relationships
     // ---------------------------------------------------------------
 
-    public function region(): BelongsTo
+    public function ministry(): BelongsTo
     {
-        return $this->belongsTo(Region::class);
+        return $this->belongsTo(Ministry::class);
     }
 
-    public function subZones(): HasMany
+    public function zones(): HasMany
     {
-        return $this->hasMany(SubZone::class);
+        return $this->hasMany(Zone::class);
     }
 
-    public function users(): HasMany
+    public function subZones(): HasManyThrough
     {
-        return $this->hasMany(User::class);
+        return $this->hasManyThrough(SubZone::class, Zone::class);
     }
 
     /**
-     * All churches in this zone, reached through Sub-zone.
+     * All churches under this region, reached through Zone -> Sub-zone.
+     * (hasManyThrough only supports one intermediate table, so the
+     * Zone -> Sub-zone -> Church hop is expressed as a scoped query.)
      */
     public function churches()
     {
-        return Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $this->id));
+        return Church::whereHas('subZone.zone', fn ($q) => $q->where('region_id', $this->id));
     }
 
     // ---------------------------------------------------------------
     // Accessors
     // ---------------------------------------------------------------
 
-    public function getSubZonesCountAttribute(): int
+    public function getZonesCountAttribute(): int
     {
-        return (int) ($this->attributes['sub_zones_count'] ?? $this->subZones()->count());
+        return (int) ($this->attributes['zones_count'] ?? $this->zones()->count());
     }
 
     public function getChurchesCountAttribute(): int

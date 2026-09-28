@@ -23,9 +23,10 @@ class ChurchController extends Controller
         $paginator = $this->churchService->index(
             $request->user(),
             [
-                'search'    => $request->search,
-                'zone_id'   => $request->zone_id,
-                'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
+                'search'      => $request->search,
+                'sub_zone_id' => $request->sub_zone_id,
+                'zone_id'     => $request->zone_id,
+                'is_active'   => $request->filled('is_active') ? $request->boolean('is_active') : null,
             ],
             $perPage,
         );
@@ -38,13 +39,20 @@ class ChurchController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isZoneAdmin() && $request->zone_id !== $user->zone_id) {
-            return $this->forbiddenResponse('You can only create churches within your zone.');
+        if ($user->isZoneAdmin()) {
+            // Confirm the target sub-zone actually belongs to the admin's zone.
+            $belongsToZone = \App\Models\SubZone::where('id', $request->sub_zone_id)
+                ->where('zone_id', $user->zone_id)
+                ->exists();
+
+            if (! $belongsToZone) {
+                return $this->forbiddenResponse('You can only create churches within your zone.');
+            }
         }
 
         $church = $this->churchService->store($request->validated());
 
-        return $this->createdResponse($church->load('zone'), 'Church created successfully.');
+        return $this->createdResponse($church->load('subZone.zone'), 'Church created successfully.');
     }
 
     /** GET /api/churches/{church} */
@@ -71,10 +79,11 @@ class ChurchController extends Controller
             'location'           => ['nullable', 'string', 'max:200'],
             'phone'              => ['nullable', 'string', 'max:20'],
             'email'              => ['nullable', 'email'],
-            'pastor_name'        => ['nullable', 'string', 'max:150'],
             'establishment_date' => ['nullable', 'date'],
             'latitude'           => ['nullable', 'numeric', 'between:-90,90'],
             'longitude'          => ['nullable', 'numeric', 'between:-180,180'],
+            'land_status'        => ['nullable', 'in:rented,bought'],
+            'building_status'    => ['nullable', 'in:rented,built,under_construction'],
             'is_active'          => ['boolean'],
         ]);
 

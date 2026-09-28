@@ -36,6 +36,13 @@ return new class extends Migration
             $table->foreignUuid('recorded_by')->constrained('users');
             $table->foreignUuid('member_id')->nullable()->constrained('members')->nullOnDelete();
 
+            // A contribution may optionally be tied to a specific Event
+            // (e.g. Sunday service offering) and/or Project (e.g. building
+            // fund pledge). Both are nullable — most transactions are
+            // ordinary giving with no event/project attached.
+            $table->foreignUuid('event_id')->nullable()->constrained('events')->nullOnDelete();
+            $table->foreignUuid('project_id')->nullable()->constrained('projects')->nullOnDelete();
+
             $table->decimal('amount', 14, 2);
             $table->string('currency', 10)->default('KES');
             $table->date('transaction_date');
@@ -60,6 +67,8 @@ return new class extends Migration
             $table->index(['church_id', 'transaction_date']);
             $table->index(['church_id', 'transaction_type_id']);
             $table->index(['transaction_date', 'is_verified']);
+            $table->index('event_id');
+            $table->index('project_id');
         });
     }
 

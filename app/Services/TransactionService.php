@@ -23,7 +23,7 @@ class TransactionService
      */
     public function index(User $user, array $filters, int $perPage): LengthAwarePaginator
     {
-        $query = Transaction::with(['church', 'transactionType', 'recorder', 'member'])
+        $query = Transaction::with(['church', 'transactionType', 'recorder', 'member', 'event', 'project'])
             ->when($filters['church_id'] ?? null, fn ($q, $v) => $q->where('church_id', $v))
             ->when($filters['transaction_type_id'] ?? null, fn ($q, $v) => $q->where('transaction_type_id', $v))
             ->when($filters['category'] ?? null, fn ($q, $v) =>
@@ -42,7 +42,7 @@ class TransactionService
             );
 
         if ($user->isZoneAdmin()) {
-            $churchIds = Church::where('zone_id', $user->zone_id)->pluck('id');
+            $churchIds = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $user->zone_id))->pluck('id');
             $query->whereIn('church_id', $churchIds);
         } elseif ($user->isChurchAdmin()) {
             $query->where('church_id', $user->church_id);
@@ -90,7 +90,7 @@ class TransactionService
      */
     public function show(Transaction $transaction): Transaction
     {
-        return $transaction->load(['church.zone', 'transactionType', 'recorder', 'member', 'verifier']);
+        return $transaction->load(['church.subZone.zone', 'transactionType', 'recorder', 'member', 'verifier', 'event', 'project']);
     }
 
     // ---------------------------------------------------------------

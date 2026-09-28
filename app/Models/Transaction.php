@@ -14,6 +14,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'church_id', 'transaction_type_id', 'recorded_by', 'member_id',
+        'event_id', 'project_id',
         'amount', 'currency', 'transaction_date', 'service_type',
         'reference_number', 'description', 'notes',
         'is_verified', 'verified_by', 'verified_at',
@@ -55,6 +56,18 @@ class Transaction extends Model
         return $this->belongsTo(User::class, 'verified_by');
     }
 
+    /** The Event this contribution is tagged to, if any. */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    /** The Project this contribution is tagged to, if any. */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
     // ---------------------------------------------------------------
     // Scopes
     // ---------------------------------------------------------------
@@ -85,6 +98,6 @@ class Transaction extends Model
 
     public function scopeForZone($query, string $zoneId)
     {
-        return $query->whereHas('church', fn ($q) => $q->where('zone_id', $zoneId));
+        return $query->whereHas('church.subZone', fn ($q) => $q->where('zone_id', $zoneId));
     }
 }

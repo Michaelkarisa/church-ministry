@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RuntimeException;
 
@@ -51,14 +50,9 @@ class Ministry extends Model
     // Relationships
     // ---------------------------------------------------------------
 
-    public function zones(): HasMany
+    public function regions(): HasMany
     {
-        return $this->hasMany(Zone::class);
-    }
-
-    public function churches(): HasManyThrough
-    {
-        return $this->hasManyThrough(Church::class, Zone::class);
+        return $this->hasMany(Region::class);
     }
 
     public function users(): HasMany
@@ -66,17 +60,38 @@ class Ministry extends Model
         return $this->hasMany(User::class);
     }
 
+    /**
+     * All churches ministry-wide, reached through
+     * Region -> Zone -> Sub-zone (a 3-hop chain, so expressed as a
+     * scoped query rather than hasManyThrough, which only supports
+     * one intermediate table).
+     */
+    public function churches()
+    {
+        return Church::whereHas('subZone.zone.region', fn ($q) => $q->where('ministry_id', $this->id));
+    }
+
     // ---------------------------------------------------------------
     // Accessors
     // ---------------------------------------------------------------
 
-    public function getChurchesCountAttribute(): int
+    public function getRegionsCountAttribute(): int
     {
-        return $this->churches()->count();
+        return $this->regions()->count();
     }
 
     public function getZonesCountAttribute(): int
     {
-        return $this->zones()->count();
+        return Zone::whereHas('region', fn ($q) => $q->where('ministry_id', $this->id))->count();
+    }
+
+    public function getSubZonesCountAttribute(): int
+    {
+        return SubZone::whereHas('zone.region', fn ($q) => $q->where('ministry_id', $this->id))->count();
+    }
+
+    public function getChurchesCountAttribute(): int
+    {
+        return $this->churches()->count();
     }
 }

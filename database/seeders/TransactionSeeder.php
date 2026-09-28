@@ -24,7 +24,7 @@ class TransactionSeeder extends Seeder
      */
     public function run(): void
     {
-        $churches      = Church::where('is_active', true)->with('zone')->get();
+        $churches      = Church::where('is_active', true)->with('subZone.zone')->get();
         $transTypes    = TransactionType::where('is_active', true)->get()->keyBy('code');
         $recorderCache = []; // church_id → User
 

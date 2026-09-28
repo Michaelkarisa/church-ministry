@@ -3,7 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\Church;
+use App\Models\Leadership;
 use App\Models\Ministry;
+use App\Models\Region;
+use App\Models\SubZone;
 use App\Models\Zone;
 use Illuminate\Database\Seeder;
 
@@ -29,51 +32,103 @@ class MinistrySeeder extends Seeder
         ]);
 
         // ---------------------------------------------------------------
-        // Zones
+        // Regions (Ministry -> Region -> Zone -> Sub-zone -> Church)
+        // ---------------------------------------------------------------
+        $regions = [
+            ['code' => 'RNB', 'name' => 'Nairobi Region'],
+            ['code' => 'RRV', 'name' => 'Rift Valley Region'],
+            ['code' => 'RNZ', 'name' => 'Nyanza Region'],
+        ];
+
+        $createdRegions = [];
+        foreach ($regions as $regionData) {
+            $createdRegions[$regionData['code']] = Region::firstOrCreate(
+                ['code' => $regionData['code']],
+                array_merge($regionData, ['ministry_id' => $ministry->id, 'is_active' => true])
+            );
+        }
+
+        // ---------------------------------------------------------------
+        // Zones — one per region for this seed data
         // ---------------------------------------------------------------
         $zones = [
-            ['code' => 'ZNB', 'name' => 'Nairobi Zone',      'region' => 'Nairobi'],
-            ['code' => 'ZRV', 'name' => 'Rift Valley Zone',  'region' => 'Rift Valley'],
-            ['code' => 'ZNZ', 'name' => 'Nyanza Zone',       'region' => 'Nyanza'],
+            ['code' => 'ZNB', 'name' => 'Nairobi Zone',     'region_code' => 'RNB'],
+            ['code' => 'ZRV', 'name' => 'Rift Valley Zone', 'region_code' => 'RRV'],
+            ['code' => 'ZNZ', 'name' => 'Nyanza Zone',      'region_code' => 'RNZ'],
         ];
 
         $createdZones = [];
         foreach ($zones as $zoneData) {
             $createdZones[$zoneData['code']] = Zone::firstOrCreate(
                 ['code' => $zoneData['code']],
-                array_merge($zoneData, [
-                    'ministry_id' => $ministry->id,
-                    'is_active'   => true,
-                ])
-            );
-        }
-
-        // ---------------------------------------------------------------
-        // Churches
-        // ---------------------------------------------------------------
-        $churches = [
-            ['zone_code' => 'ZNB', 'code' => 'CHR-NBI-01', 'name' => 'Nairobi Central Church',  'location' => 'CBD, Nairobi',       'pastor_name' => 'Rev. John Kamau'],
-            ['zone_code' => 'ZNB', 'code' => 'CHR-NBI-02', 'name' => 'Westlands Fellowship',    'location' => 'Westlands, Nairobi', 'pastor_name' => 'Rev. Grace Wanjiku'],
-            ['zone_code' => 'ZNB', 'code' => 'CHR-NBI-03', 'name' => 'Kasarani Life Church',    'location' => 'Kasarani, Nairobi',  'pastor_name' => 'Rev. Peter Mwangi'],
-            ['zone_code' => 'ZRV', 'code' => 'CHR-NKR-01', 'name' => 'Nakuru Worship Centre',   'location' => 'Nakuru Town',        'pastor_name' => 'Rev. Samuel Kipchoge'],
-            ['zone_code' => 'ZRV', 'code' => 'CHR-ELD-01', 'name' => 'Eldoret Grace Church',    'location' => 'Eldoret',            'pastor_name' => 'Rev. Mary Chebet'],
-            ['zone_code' => 'ZNZ', 'code' => 'CHR-KSM-01', 'name' => 'Kisumu Lakeside Church',  'location' => 'Kisumu',             'pastor_name' => 'Rev. David Ouma'],
-        ];
-
-        foreach ($churches as $churchData) {
-            $zone = $createdZones[$churchData['zone_code']];
-            Church::firstOrCreate(
-                ['code' => $churchData['code']],
                 [
-                    'zone_id'     => $zone->id,
-                    'name'        => $churchData['name'],
-                    'location'    => $churchData['location'],
-                    'pastor_name' => $churchData['pastor_name'],
-                    'is_active'   => true,
+                    'name'      => $zoneData['name'],
+                    'region_id' => $createdRegions[$zoneData['region_code']]->id,
+                    'is_active' => true,
                 ]
             );
         }
 
-        $this->command->info("✓ Ministry, {$ministry->zones()->count()} zones, and churches seeded.");
+        // ---------------------------------------------------------------
+        // Sub-zones
+        // ---------------------------------------------------------------
+        $subZones = [
+            ['code' => 'SZ-NBI-C', 'name' => 'Nairobi Central Sub-zone', 'zone_code' => 'ZNB'],
+            ['code' => 'SZ-NBI-W', 'name' => 'Nairobi West Sub-zone',    'zone_code' => 'ZNB'],
+            ['code' => 'SZ-RV-N',  'name' => 'Rift Valley North Sub-zone', 'zone_code' => 'ZRV'],
+            ['code' => 'SZ-NZ-K',  'name' => 'Nyanza Kisumu Sub-zone',   'zone_code' => 'ZNZ'],
+        ];
+
+        $createdSubZones = [];
+        foreach ($subZones as $subZoneData) {
+            $createdSubZones[$subZoneData['code']] = SubZone::firstOrCreate(
+                ['code' => $subZoneData['code']],
+                [
+                    'name'      => $subZoneData['name'],
+                    'zone_id'   => $createdZones[$subZoneData['zone_code']]->id,
+                    'is_active' => true,
+                ]
+            );
+        }
+
+        // ---------------------------------------------------------------
+        // Churches — general details + assets. Leadership is seeded
+        // separately below (Members is dormant, so leaders are their
+        // own standalone records, not linked to Member).
+        // ---------------------------------------------------------------
+        $churches = [
+            ['sub_zone_code' => 'SZ-NBI-C', 'code' => 'CHR-NBI-01', 'name' => 'Nairobi Central Church', 'location' => 'CBD, Nairobi',       'land_status' => 'bought', 'building_status' => 'built',             'pastor' => 'Rev. John Kamau'],
+            ['sub_zone_code' => 'SZ-NBI-W', 'code' => 'CHR-NBI-02', 'name' => 'Westlands Fellowship',   'location' => 'Westlands, Nairobi', 'land_status' => 'rented', 'building_status' => 'rented',            'pastor' => 'Rev. Grace Wanjiku'],
+            ['sub_zone_code' => 'SZ-NBI-W', 'code' => 'CHR-NBI-03', 'name' => 'Kasarani Life Church',   'location' => 'Kasarani, Nairobi',  'land_status' => 'bought', 'building_status' => 'under_construction', 'pastor' => 'Rev. Peter Mwangi'],
+            ['sub_zone_code' => 'SZ-RV-N',  'code' => 'CHR-NKR-01', 'name' => 'Nakuru Worship Centre',  'location' => 'Nakuru Town',        'land_status' => 'bought', 'building_status' => 'built',             'pastor' => 'Rev. Samuel Kipchoge'],
+            ['sub_zone_code' => 'SZ-RV-N',  'code' => 'CHR-ELD-01', 'name' => 'Eldoret Grace Church',   'location' => 'Eldoret',            'land_status' => 'rented', 'building_status' => 'rented',            'pastor' => 'Rev. Mary Chebet'],
+            ['sub_zone_code' => 'SZ-NZ-K',  'code' => 'CHR-KSM-01', 'name' => 'Kisumu Lakeside Church', 'location' => 'Kisumu',             'land_status' => 'bought', 'building_status' => 'built',             'pastor' => 'Rev. David Ouma'],
+        ];
+
+        foreach ($churches as $churchData) {
+            $church = Church::firstOrCreate(
+                ['code' => $churchData['code']],
+                [
+                    'sub_zone_id'     => $createdSubZones[$churchData['sub_zone_code']]->id,
+                    'name'            => $churchData['name'],
+                    'location'        => $churchData['location'],
+                    'land_status'     => $churchData['land_status'],
+                    'building_status' => $churchData['building_status'],
+                    'is_active'       => true,
+                ]
+            );
+
+            // Leadership — primary Pastor record for each church.
+            Leadership::firstOrCreate(
+                ['church_id' => $church->id, 'name' => $churchData['pastor']],
+                ['role' => 'Pastor', 'is_primary' => true, 'is_active' => true]
+            );
+        }
+
+        $this->command->info(
+            "✓ Ministry seeded: {$ministry->regions()->count()} regions, "
+            . Zone::count() . ' zones, ' . SubZone::count() . ' sub-zones, '
+            . Church::count() . ' churches, ' . Leadership::count() . ' leaders.'
+        );
     }
 }

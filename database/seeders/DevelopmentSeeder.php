@@ -54,7 +54,7 @@ class DevelopmentSeeder extends Seeder
         // ---------------------------------------------------------------
         // One church admin per church
         // ---------------------------------------------------------------
-        foreach (Church::where('is_active', true)->with('zone')->get() as $church) {
+        foreach (Church::where('is_active', true)->with('subZone.zone')->get() as $church) {
             $slug     = strtolower(preg_replace('/[^a-z0-9]/i', '', $church->code));
             $email    = "church.{$slug}@dev.ministry.ke";
             $password = 'Dev@Church2024';

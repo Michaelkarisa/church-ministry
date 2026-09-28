@@ -20,6 +20,8 @@ class UpdateTransactionRequest extends FormRequest
             'transaction_date'    => ['sometimes', 'date', 'before_or_equal:today'],
             'service_type'        => ['nullable', Rule::in(array_keys(config('church.service_types')))],
             'member_id'           => ['nullable', 'exists:members,id'],
+            'event_id'            => ['nullable', 'exists:events,id'],
+            'project_id'          => ['nullable', 'exists:projects,id'],
             'reference_number'    => ['nullable', 'string', 'max:80', Rule::unique('transactions', 'reference_number')->ignore($txnId)],
             'description'         => ['nullable', 'string', 'max:500'],
             'notes'               => ['nullable', 'string', 'max:1000'],

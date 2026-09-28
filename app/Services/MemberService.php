@@ -28,7 +28,7 @@ class MemberService
             ->when($filters['church_id'] ?? null, fn ($q, $v) => $q->where('church_id', $v));
 
         if ($user->isZoneAdmin()) {
-            $query->whereHas('church', fn ($q) => $q->where('zone_id', $user->zone_id));
+            $query->whereHas('church.subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
         } elseif ($user->isChurchAdmin()) {
             $query->where('church_id', $user->church_id);
         }
@@ -49,7 +49,7 @@ class MemberService
      */
     public function show(Member $member): Member
     {
-        return $member->load(['church.zone'])->loadCount('transactions');
+        return $member->load(['church.subZone.zone.region'])->loadCount('transactions');
     }
 
     /**

@@ -52,7 +52,7 @@ class RoleService
         } else {
             // ZoneAdmin: only ChurchAdmins within their zone
             $churchAdminRole = Role::where('name', Role::CHURCH_ADMIN)->first();
-            $churchIds       = Church::where('zone_id', $actor->zone_id)->pluck('id');
+            $churchIds       = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $actor->zone_id))->pluck('id');
 
             $query->where('role_id', $churchAdminRole?->id)
                   ->where(fn ($q) =>

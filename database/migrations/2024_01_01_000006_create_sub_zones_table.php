@@ -8,12 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('zones', function (Blueprint $table) {
+        Schema::create('sub_zones', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('ministry_id')->constrained()->cascadeOnDelete();
+            // Sub-zones sit under a Zone; Churches sit under a Sub-zone.
+            $table->foreignUuid('zone_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->string('code', 20)->unique();
-            $table->string('region', 100)->nullable();
             $table->text('address')->nullable();
             $table->string('phone', 20)->nullable();
             $table->string('email')->nullable();
@@ -25,6 +25,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('zones');
+        Schema::dropIfExists('sub_zones');
     }
 };

@@ -14,9 +14,11 @@ class Church extends Model
     use HasUuids, SoftDeletes;
 
     protected $fillable = [
-        'zone_id', 'name', 'code', 'address', 'location',
-        'phone', 'email', 'pastor_name', 'establishment_date',
-        'latitude', 'longitude', 'is_active',
+        'sub_zone_id', 'name', 'code', 'address', 'location',
+        'phone', 'email', 'establishment_date',
+        'latitude', 'longitude',
+        'land_status', 'building_status',
+        'is_active',
     ];
 
     protected $casts = [
@@ -26,13 +28,16 @@ class Church extends Model
         'longitude'          => 'float',
     ];
 
+    public const LAND_STATUSES = ['rented', 'bought'];
+    public const BUILDING_STATUSES = ['rented', 'built', 'under_construction'];
+
     // ---------------------------------------------------------------
-    // Relationships
+    // Core hierarchy relationships
     // ---------------------------------------------------------------
 
-    public function zone(): BelongsTo
+    public function subZone(): BelongsTo
     {
-        return $this->belongsTo(Zone::class);
+        return $this->belongsTo(SubZone::class);
     }
 
     public function members(): HasMany
@@ -48,6 +53,65 @@ class Church extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    // ---------------------------------------------------------------
+    // Church-entity relationships (new)
+    // ---------------------------------------------------------------
+
+    public function leadership(): HasMany
+    {
+        return $this->hasMany(Leadership::class);
+    }
+
+    /** The single leader flagged as primary (e.g. the Pastor), if any. */
+    public function primaryLeader(): HasMany
+    {
+        return $this->leadership()->where('is_primary', true);
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(Event::class);
+    }
+
+    public function projects(): HasMany
+    {
+        return $this->hasMany(Project::class);
+    }
+
+    // ---------------------------------------------------------------
+    // Backward-compatible hierarchy accessors
+    // ---------------------------------------------------------------
+    // Churches used to belong directly to a Zone. They now belong to a
+    // Sub-zone, which belongs to a Zone. These accessors let existing
+    // code (scoping, filters, seeders) keep reading `$church->zone`
+    // and `$church->zone_id` without every call site knowing about the
+    // extra hop.
+
+    public function zone(): ?Zone
+    {
+        return $this->subZone?->zone;
+    }
+
+    public function getZoneIdAttribute(): ?string
+    {
+        return $this->subZone?->zone_id;
+    }
+
+    public function region(): ?Region
+    {
+        return $this->subZone?->zone?->region;
+    }
+
+    public function getRegionIdAttribute(): ?string
+    {
+        return $this->subZone?->zone?->region_id;
+    }
+
+    public function getMinistryIdAttribute(): ?string
+    {
+        return $this->subZone?->zone?->region?->ministry_id;
     }
 
     // ---------------------------------------------------------------

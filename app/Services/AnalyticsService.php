@@ -157,7 +157,7 @@ class AnalyticsService
     {
         $period = $this->periodClause($params);
 
-        $churchIds = Church::where('zone_id', $zoneId)->pluck('id');
+        $churchIds = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $zoneId))->pluck('id');
 
         $base = Transaction::whereIn('church_id', $churchIds)
             ->whereBetween('transaction_date', [$period['from'], $period['to']]);
@@ -202,7 +202,7 @@ class AnalyticsService
     {
         $period = $this->periodClause($params);
 
-        $churches = Church::where('zone_id', $zoneId)
+        $churches = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $zoneId))
             ->with('transactions' , fn ($q) =>
                 $q->whereBetween('transaction_date', [$period['from'], $period['to']])
             )
@@ -229,7 +229,7 @@ class AnalyticsService
         $period    = $this->periodClause($params);
         $groupBy   = $params['group_by'] ?? 'day';
         $fmt       = $this->groupByFormat($groupBy);
-        $churchIds = Church::where('zone_id', $zoneId)->pluck('id');
+        $churchIds = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $zoneId))->pluck('id');
 
         $trend = Transaction::whereIn('church_id', $churchIds)
             ->whereBetween('transaction_date', [$period['from'], $period['to']])
@@ -296,9 +296,14 @@ class AnalyticsService
     {
         $period = $this->periodClause($params);
 
-        $zones = \App\Models\Zone::with(['churches'])->get()
+        // Churches sit under Zone -> Sub-zone, so `churches()` on Zone is a
+        // scoped query rather than an eager-loadable relation — pull the
+        // per-zone church IDs explicitly instead of with('churches').
+        $zones = \App\Models\Zone::with('subZones')->get()
             ->map(function ($zone) use ($period) {
-                $churchIds = $zone->churches->pluck('id');
+                $subZoneIds = $zone->subZones->pluck('id');
+                $churchIds  = \App\Models\Church::whereIn('sub_zone_id', $subZoneIds)->pluck('id');
+
                 $txns = Transaction::whereIn('church_id', $churchIds)
                     ->whereBetween('transaction_date', [$period['from'], $period['to']]);
 
@@ -306,7 +311,7 @@ class AnalyticsService
                     'zone_id'      => $zone->id,
                     'zone_name'    => $zone->name,
                     'zone_code'    => $zone->code,
-                    'churches'     => $zone->churches->count(),
+                    'churches'     => $churchIds->count(),
                     'total_amount' => round((float) (clone $txns)->sum('amount'), 2),
                     'count'        => (clone $txns)->count(),
                 ];
@@ -324,7 +329,8 @@ class AnalyticsService
 
         $churches = Transaction::whereBetween('transaction_date', [$period['from'], $period['to']])
             ->join('churches', 'transactions.church_id', '=', 'churches.id')
-            ->join('zones', 'churches.zone_id', '=', 'zones.id')
+            ->join('sub_zones', 'churches.sub_zone_id', '=', 'sub_zones.id')
+            ->join('zones', 'sub_zones.zone_id', '=', 'zones.id')
             ->select(
                 'churches.id',
                 'churches.name as church_name',
@@ -385,6 +391,173 @@ class AnalyticsService
         ];
     }
 
+    // ---------------------------------------------------------------
+    // Structure overview (non-financial)
+    // ---------------------------------------------------------------
+    // This is the general "landing" dashboard: church counts rolled up
+    // through the hierarchy, plus asset/leadership/activity indicators.
+    // It deliberately excludes financial totals and contribution
+    // figures — see AnalyticsService::churchSummary /
+    // EventService::show / ProjectService::show for the financial
+    // drill-down, which is only ever queried one church at a time.
+    public function structureOverview(User $user): array
+    {
+        $scope = $user->accessScope();
+
+        return match ($scope['level']) {
+            'ministry' => $this->ministryStructureOverview(),
+            'zone'     => $this->zoneStructureOverview($scope['zone_id']),
+            default    => $this->churchStructureOverview($scope['church_id']),
+        };
+    }
+
+    private function ministryStructureOverview(): array
+    {
+        $ministry = \App\Models\Ministry::current();
+
+        $regions  = \App\Models\Region::withCount('zones')->get();
+        $zones    = \App\Models\Zone::all();
+        $subZones = \App\Models\SubZone::all();
+
+        return [
+            'ministry' => $ministry?->only(['id', 'name', 'code']),
+
+            'church_counts' => [
+                'per_region'   => $regions->map(fn ($r) => [
+                    'id' => $r->id, 'name' => $r->name, 'churches' => $r->churches_count,
+                ]),
+                'per_zone'     => $zones->map(fn ($z) => [
+                    'id' => $z->id, 'name' => $z->name, 'churches' => $z->churches_count,
+                ]),
+                'per_sub_zone' => $subZones->map(fn ($sz) => [
+                    'id' => $sz->id, 'name' => $sz->name, 'churches' => $sz->churches_count,
+                ]),
+                'ministry_total' => Church::count(),
+            ],
+
+            'structure_totals' => [
+                'regions'    => $regions->count(),
+                'zones'      => $zones->count(),
+                'sub_zones'  => $subZones->count(),
+                'churches'   => Church::count(),
+            ],
+
+            'asset_status'       => $this->assetStatusBreakdown(),
+            'leadership'         => $this->leadershipOverview(),
+            'projects'           => $this->projectsOverview(),
+            'recent_activity'    => $this->recentEventsOverview(),
+        ];
+    }
+
+    private function zoneStructureOverview(?string $zoneId): array
+    {
+        $zone     = \App\Models\Zone::with('region')->find($zoneId);
+        $subZones = \App\Models\SubZone::where('zone_id', $zoneId)->get();
+        $churchIds = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $zoneId))->pluck('id');
+
+        return [
+            'zone' => $zone?->only(['id', 'name', 'code']),
+
+            'church_counts' => [
+                'per_sub_zone' => $subZones->map(fn ($sz) => [
+                    'id' => $sz->id, 'name' => $sz->name, 'churches' => $sz->churches_count,
+                ]),
+                'zone_total' => $churchIds->count(),
+            ],
+
+            'structure_totals' => [
+                'sub_zones' => $subZones->count(),
+                'churches'  => $churchIds->count(),
+            ],
+
+            'asset_status'    => $this->assetStatusBreakdown($churchIds),
+            'leadership'      => $this->leadershipOverview($churchIds),
+            'projects'        => $this->projectsOverview($churchIds),
+            'recent_activity' => $this->recentEventsOverview($churchIds),
+        ];
+    }
+
+    private function churchStructureOverview(?string $churchId): array
+    {
+        $church = Church::with(['subZone.zone.region', 'leadership' => fn ($q) => $q->where('is_active', true)])
+            ->find($churchId);
+
+        if (! $church) {
+            return [];
+        }
+
+        return [
+            'church' => [
+                'id'               => $church->id,
+                'name'             => $church->name,
+                'land_status'      => $church->land_status,
+                'building_status'  => $church->building_status,
+                'leadership_count' => $church->leadership->count(),
+            ],
+            'projects'        => $this->projectsOverview(collect([$church->id])),
+            'recent_activity' => $this->recentEventsOverview(collect([$church->id])),
+        ];
+    }
+
+    /** Land/building status counts, optionally restricted to a set of church IDs. */
+    private function assetStatusBreakdown(?\Illuminate\Support\Collection $churchIds = null): array
+    {
+        $query = Church::query()->when($churchIds, fn ($q) => $q->whereIn('id', $churchIds));
+
+        return [
+            'land' => (clone $query)
+                ->select('land_status', DB::raw('COUNT(*) as count'))
+                ->groupBy('land_status')
+                ->pluck('count', 'land_status'),
+            'building' => (clone $query)
+                ->select('building_status', DB::raw('COUNT(*) as count'))
+                ->groupBy('building_status')
+                ->pluck('count', 'building_status'),
+        ];
+    }
+
+    /** Leadership counts, optionally restricted to a set of church IDs. */
+    private function leadershipOverview(?\Illuminate\Support\Collection $churchIds = null): array
+    {
+        $query = \App\Models\Leadership::query()
+            ->where('is_active', true)
+            ->when($churchIds, fn ($q) => $q->whereIn('church_id', $churchIds));
+
+        return [
+            'total_leaders'           => (clone $query)->count(),
+            'churches_without_leader' => ($churchIds ? $churchIds->count() : Church::count())
+                - (clone $query)->pluck('church_id')->unique()->count(),
+        ];
+    }
+
+    /** Active project counts, optionally restricted to a set of church IDs. */
+    private function projectsOverview(?\Illuminate\Support\Collection $churchIds = null): array
+    {
+        $query = \App\Models\Project::query()
+            ->where('is_active', true)
+            ->when($churchIds, fn ($q) => $q->whereIn('church_id', $churchIds));
+
+        return [
+            'active_count' => (clone $query)->count(),
+        ];
+    }
+
+    /** Recent events + a simple attendance trend, optionally restricted to a set of church IDs. */
+    private function recentEventsOverview(?\Illuminate\Support\Collection $churchIds = null): array
+    {
+        $query = \App\Models\Event::query()
+            ->when($churchIds, fn ($q) => $q->whereIn('church_id', $churchIds))
+            ->orderByDesc('event_date');
+
+        $recent = (clone $query)->limit(5)->get(['id', 'church_id', 'type', 'event_date', 'attendance_count']);
+
+        $avgAttendance = (clone $query)->limit(10)->avg('attendance_count');
+
+        return [
+            'recent_events'    => $recent,
+            'avg_attendance_last_10' => $avgAttendance ? round($avgAttendance, 1) : null,
+        ];
+    }
     // ---------------------------------------------------------------
     // Activity log analytics
     // ---------------------------------------------------------------

@@ -3,12 +3,18 @@
 use App\Http\Controllers\Analytics\ActivityLogController;
 use App\Http\Controllers\Analytics\ChurchAnalyticsController;
 use App\Http\Controllers\Analytics\MinistryAnalyticsController;
+use App\Http\Controllers\Analytics\StructureAnalyticsController;
 use App\Http\Controllers\Analytics\ZoneAnalyticsController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\ChurchController;
+use App\Http\Controllers\EventController;
+use App\Http\Controllers\LeadershipController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\MinistryController;
+use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\RegionController;
+use App\Http\Controllers\SubZoneController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionTypeController;
 use App\Http\Controllers\UserController;
@@ -74,6 +80,55 @@ Route::prefix('v1')
             Route::delete('churches/{church}',  [ChurchController::class, 'destroy']);
         });
 
+        // Leaders of one specific church — "who is to do data entry" style lookup
+        Route::get('churches/{church}/leadership', [LeadershipController::class, 'forChurch']);
+
+
+        // -------------------------------------------------------------------
+        // Regions — ministry-wide structural entity; ministry admin manages,
+        // any authenticated admin can read (structural, not financial, data)
+        // -------------------------------------------------------------------
+        Route::get('regions',           [RegionController::class, 'index']);
+        Route::get('regions/{region}',  [RegionController::class, 'show']);
+
+        Route::middleware('ministry.admin')->group(function () {
+            Route::post('regions',              [RegionController::class, 'store']);
+            Route::put('regions/{region}',      [RegionController::class, 'update']);
+            Route::delete('regions/{region}',   [RegionController::class, 'destroy']);
+        });
+
+
+        // -------------------------------------------------------------------
+        // Sub-zones — zone admin manages their own; ministry admin manages all
+        // -------------------------------------------------------------------
+        Route::middleware('zone.admin')->group(function () {
+            Route::get('sub-zones',              [SubZoneController::class, 'index']);
+            Route::get('sub-zones/{subZone}',    [SubZoneController::class, 'show']);
+            Route::post('sub-zones',             [SubZoneController::class, 'store']);
+            Route::put('sub-zones/{subZone}',    [SubZoneController::class, 'update']);
+            Route::delete('sub-zones/{subZone}', [SubZoneController::class, 'destroy']);
+        });
+
+
+        // -------------------------------------------------------------------
+        // Leadership — a table of leaders per church (Pastor, Assistant
+        // Pastor, Elder, etc.) rather than a single fixed "pastor" field.
+        // -------------------------------------------------------------------
+        Route::apiResource('leadership', LeadershipController::class)->except(['show']);
+
+
+        // -------------------------------------------------------------------
+        // Events — church activity (services, attendance, sermon, and any
+        // linked contributions). All admins, scoped by role.
+        // -------------------------------------------------------------------
+        Route::apiResource('events', EventController::class);
+
+
+        // -------------------------------------------------------------------
+        // Projects — end_date optional; duration is always computed.
+        // -------------------------------------------------------------------
+        Route::apiResource('projects', ProjectController::class);
+
 
         // -------------------------------------------------------------------
         // Zones — zone admin reads; ministry admin full CRUD
@@ -118,6 +173,13 @@ Route::prefix('v1')
         Route::prefix('analytics')
              ->middleware(['cache.response:1800', 'rate.limit:analytics'])
              ->group(function () {
+
+            // General overview — non-financial (church counts per level,
+            // asset status, leadership, activity). Scoped automatically to
+            // the viewer's level (ministry/zone/church). This is the
+            // default landing dashboard; financial figures are a
+            // deliberate drill-down elsewhere, never shown here.
+            Route::get('overview', [StructureAnalyticsController::class, 'overview']);
 
             // Church-level — all admins (scoped by role)
             Route::prefix('church')->group(function () {

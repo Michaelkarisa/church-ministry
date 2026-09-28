@@ -9,12 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Zone extends Model
+class SubZone extends Model
 {
     use HasUuids, SoftDeletes;
 
     protected $fillable = [
-        'region_id', 'name', 'code',
+        'zone_id', 'name', 'code',
         'address', 'phone', 'email', 'is_active',
     ];
 
@@ -26,37 +26,19 @@ class Zone extends Model
     // Relationships
     // ---------------------------------------------------------------
 
-    public function region(): BelongsTo
+    public function zone(): BelongsTo
     {
-        return $this->belongsTo(Region::class);
+        return $this->belongsTo(Zone::class);
     }
 
-    public function subZones(): HasMany
+    public function churches(): HasMany
     {
-        return $this->hasMany(SubZone::class);
-    }
-
-    public function users(): HasMany
-    {
-        return $this->hasMany(User::class);
-    }
-
-    /**
-     * All churches in this zone, reached through Sub-zone.
-     */
-    public function churches()
-    {
-        return Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $this->id));
+        return $this->hasMany(Church::class);
     }
 
     // ---------------------------------------------------------------
     // Accessors
     // ---------------------------------------------------------------
-
-    public function getSubZonesCountAttribute(): int
-    {
-        return (int) ($this->attributes['sub_zones_count'] ?? $this->subZones()->count());
-    }
 
     public function getChurchesCountAttribute(): int
     {

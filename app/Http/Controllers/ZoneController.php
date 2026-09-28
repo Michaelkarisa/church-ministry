@@ -58,7 +58,7 @@ class ZoneController extends Controller
         $request->validate([
             'name'      => ['sometimes', 'string', 'max:150'],
             'code'      => ['sometimes', 'string', 'max:20', 'unique:zones,code,' . $zone->id],
-            'region'    => ['nullable', 'string', 'max:100'],
+            'region_id' => ['sometimes', 'exists:regions,id'],
             'address'   => ['nullable', 'string'],
             'phone'     => ['nullable', 'string', 'max:20'],
             'email'     => ['nullable', 'email'],

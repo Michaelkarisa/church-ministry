@@ -11,21 +11,25 @@ class ChurchService
     /**
      * Return a paginated, role-scoped list of churches.
      *
-     * Accepted filters: search, zone_id, is_active (bool|null)
+     * Accepted filters: search, sub_zone_id, zone_id, is_active (bool|null)
      */
     public function index(User $user, array $filters, int $perPage): LengthAwarePaginator
     {
-        $query = Church::with('zone')
+        $query = Church::with('subZone.zone.region')
             ->withCount(['members' => fn ($q) => $q->where('is_active', true)])
             ->when($filters['search'] ?? null, fn ($q, $v) =>
                 $q->where('name', 'like', "%{$v}%")
                   ->orWhere('code', 'like', "%{$v}%")
             )
-            ->when($filters['zone_id'] ?? null, fn ($q, $v) => $q->where('zone_id', $v))
+            ->when($filters['sub_zone_id'] ?? null, fn ($q, $v) => $q->where('sub_zone_id', $v))
+            // zone_id is one hop up from sub_zone_id, so it needs the nested relation
+            ->when($filters['zone_id'] ?? null, fn ($q, $v) =>
+                $q->whereHas('subZone', fn ($sq) => $sq->where('zone_id', $v))
+            )
             ->when(isset($filters['is_active']), fn ($q) => $q->where('is_active', $filters['is_active']));
 
         if ($user->isZoneAdmin()) {
-            $query->where('zone_id', $user->zone_id);
+            $query->whereHas('subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
         } elseif ($user->isChurchAdmin()) {
             $query->where('id', $user->church_id);
         }
@@ -42,11 +46,13 @@ class ChurchService
     }
 
     /**
-     * Load a church with zone and active-member count.
+     * Load a church with its full hierarchy chain, leadership, and
+     * active-member count. Financial data is deliberately NOT loaded
+     * here — it's a separate drill-down (see AnalyticsService::churchSummary).
      */
     public function show(Church $church): Church
     {
-        return $church->load(['zone.ministry'])
+        return $church->load(['subZone.zone.region.ministry', 'leadership' => fn ($q) => $q->where('is_active', true)])
                       ->loadCount(['members' => fn ($q) => $q->where('is_active', true)]);
     }
 
@@ -56,7 +62,7 @@ class ChurchService
     public function update(Church $church, array $data): Church
     {
         $church->update($data);
-        return $church->fresh()->load('zone');
+        return $church->fresh()->load('subZone.zone.region');
     }
 
     /**

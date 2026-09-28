@@ -133,7 +133,9 @@ class User extends Authenticatable
 
         return match ($scope['level']) {
             'ministry' => $query,
-            'zone'     => $query->whereHas('church', fn ($q) =>
+            // Churches now sit under a Sub-zone, which sits under a Zone,
+            // so scoping to a zone means filtering through that extra hop.
+            'zone'     => $query->whereHas('church.subZone', fn ($q) =>
                               $q->where('zone_id', $scope['zone_id'])
                           ),
             default    => $query->where($churchColumn, $scope['church_id']),
