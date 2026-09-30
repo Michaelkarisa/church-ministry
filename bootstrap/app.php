@@ -4,6 +4,8 @@ use App\Http\Middleware\ActivityLoggerMiddleware;
 use App\Http\Middleware\CacheResponseMiddleware;
 use App\Http\Middleware\ChurchAdminMiddleware;
 use App\Http\Middleware\MinistryAdminMiddleware;
+use App\Http\Middleware\RegionAdminMiddleware;
+use App\Http\Middleware\SubZoneAdminMiddleware;
 use App\Http\Middleware\RateLimitMiddleware;
 use App\Http\Middleware\ZoneAdminMiddleware;
 use App\Http\Middleware\IdempotencyMiddleware;
@@ -38,7 +40,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // ---------------------------------------------------------------------------
         $middleware->alias([
             'ministry.admin'    => MinistryAdminMiddleware::class,
+            'region.admin'      => RegionAdminMiddleware::class,
             'zone.admin'        => ZoneAdminMiddleware::class,
+            'subzone.admin'     => SubZoneAdminMiddleware::class,
             'church.admin'      => ChurchAdminMiddleware::class,
             'activity.logger'   => ActivityLoggerMiddleware::class,
             'rate.limit'        => RateLimitMiddleware::class,

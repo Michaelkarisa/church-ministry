@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 /**
  * System route for role management.
  *
- * All routes in this controller are protected by the `zone.admin` middleware,
+ * All routes in this controller are protected by the `subzone.admin` middleware,
  * which permits MinistryAdmin (level 1) and ZoneAdmin (level 2).
  * Fine-grained scope enforcement is delegated to RoleService.
  *
@@ -83,7 +83,7 @@ class RoleManagementController extends Controller
             return $this->forbiddenResponse('You do not have permission to view this user\'s role details.');
         }
 
-        $user->load(['role', 'zone', 'church']);
+        $user->load(['role', 'region', 'zone', 'subZone', 'church']);
 
         return $this->successResponse($user, 'User retrieved.');
     }
@@ -100,7 +100,8 @@ class RoleManagementController extends Controller
      * Body: { "role_id": "<uuid>" }
      *
      * MinistryAdmin may assign: zone_admin, church_admin
-     * ZoneAdmin     may assign: church_admin (within their zone only)
+     * Any admin     may assign any role strictly below their own level,
+     *                 to a user within their own branch of the hierarchy.
      */
     public function assignRole(Request $request, User $user): JsonResponse
     {
@@ -135,7 +136,7 @@ class RoleManagementController extends Controller
      * Immediately invalidates all of the user's active tokens.
      *
      * MinistryAdmin may revoke: zone_admin, church_admin
-     * ZoneAdmin     may revoke: church_admin (within their zone only)
+     * Any admin     may revoke a role they could have assigned.
      */
     public function revokeRole(Request $request, User $user): JsonResponse
     {

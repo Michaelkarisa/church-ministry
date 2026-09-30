@@ -8,12 +8,13 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class ZoneAdminMiddleware
+class SubZoneAdminMiddleware
 {
     use ApiResponse;
 
     /**
-     * Allows MinistryAdmin, RegionAdmin and ZoneAdmin (level 1-3).
+     * Allows MinistryAdmin, RegionAdmin, ZoneAdmin and SubZoneAdmin
+     * (level 1-4) — everyone except a plain Church Administrator.
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -27,9 +28,9 @@ class ZoneAdminMiddleware
             return $this->errorResponse('Your account has been deactivated.', 403);
         }
 
-        if (! $user->isAtLeast(Role::ZONE_ADMIN)) {
+        if (! $user->isAtLeast(Role::SUB_ZONE_ADMIN)) {
             return $this->errorResponse(
-                'Access denied. Zone Administrator privileges or above required.',
+                'Access denied. Sub-zone Administrator privileges or above required.',
                 403
             );
         }

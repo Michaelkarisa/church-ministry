@@ -56,14 +56,9 @@ class LeadershipController extends Controller
         ]);
 
         $user = $request->user();
-        if ($user->isChurchAdmin() && $data['church_id'] !== $user->church_id) {
-            return $this->forbiddenResponse('You can only add leaders for your own church.');
-        }
-        if ($user->isZoneAdmin()) {
-            $church = Church::find($data['church_id']);
-            if (! $church || $church->zone_id !== $user->zone_id) {
-                return $this->forbiddenResponse('That church is not in your zone.');
-            }
+        $targetChurch = Church::find($data['church_id']);
+        if (! $targetChurch || ! (new \App\Services\ChurchService())->canAccess($user, $targetChurch)) {
+            return $this->forbiddenResponse('You can only add leaders for churches in your own branch.');
         }
 
         $leadership = $this->leadershipService->store($data);

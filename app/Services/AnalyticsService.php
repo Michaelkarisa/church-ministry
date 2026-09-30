@@ -54,6 +54,13 @@ class AnalyticsService
 
     public function churchSummary(string $churchId, array $params = []): array
     {
+        $church = Church::with([
+                'subZone.zone.region',
+                'leadership' => fn ($q) => $q->where('is_active', true),
+            ])
+            ->withCount(['members' => fn ($q) => $q->where('is_active', true)])
+            ->find($churchId);
+
         $period = $this->periodClause($params);
 
         $base = Transaction::where('church_id', $churchId)
@@ -91,17 +98,46 @@ class AnalyticsService
             ->groupBy('service_type')
             ->get();
 
+        $primaryLeader = $church?->leadership->firstWhere('is_primary', true)
+            ?? $church?->leadership->first();
+
         return [
-            'period'       => $period,
-            'church_id'    => $churchId,
-            'total_amount' => round((float) $total, 2),
-            'total_count'  => $count,
-            'verified'     => round((float) $verified, 2),
-            'pending'      => round((float) $pending, 2),
-            'by_category'  => $byCategory,
-            'by_type'      => $byType,
-            'by_service'   => $byService,
-            'currency'     => config('church.default_currency'),
+            // ---------------------------------------------------------
+            // Church profile — shown first. Structural details a viewer
+            // wants immediately: who, where, what shape. No money yet.
+            // ---------------------------------------------------------
+            'church' => $church ? [
+                'id'               => $church->id,
+                'name'             => $church->name,
+                'code'             => $church->code,
+                'hierarchy'        => [
+                    'sub_zone' => $church->subZone?->only(['id', 'name', 'code']),
+                    'zone'     => $church->subZone?->zone?->only(['id', 'name', 'code']),
+                    'region'   => $church->subZone?->zone?->region?->only(['id', 'name', 'code']),
+                ],
+                'land_status'      => $church->land_status,
+                'building_status'  => $church->building_status,
+                'primary_leader'   => $primaryLeader?->only(['id', 'name', 'role']),
+                'leadership_count' => $church->leadership->count(),
+                'members_count'    => $church->members_count,
+            ] : null,
+
+            // ---------------------------------------------------------
+            // Financials — secondary. Only reached by explicitly opening
+            // this church's analytics; never shown on the general
+            // Overview (see AnalyticsService::structureOverview).
+            // ---------------------------------------------------------
+            'financials' => [
+                'period'       => $period,
+                'total_amount' => round((float) $total, 2),
+                'total_count'  => $count,
+                'verified'     => round((float) $verified, 2),
+                'pending'      => round((float) $pending, 2),
+                'by_category'  => $byCategory,
+                'by_type'      => $byType,
+                'by_service'   => $byService,
+                'currency'     => config('church.default_currency'),
+            ],
         ];
     }
 
@@ -406,7 +442,9 @@ class AnalyticsService
 
         return match ($scope['level']) {
             'ministry' => $this->ministryStructureOverview(),
+            'region'   => $this->regionStructureOverview($scope['region_id']),
             'zone'     => $this->zoneStructureOverview($scope['zone_id']),
+            'sub_zone' => $this->subZoneStructureOverview($scope['sub_zone_id']),
             default    => $this->churchStructureOverview($scope['church_id']),
         };
     }
@@ -449,6 +487,40 @@ class AnalyticsService
         ];
     }
 
+    private function regionStructureOverview(?string $regionId): array
+    {
+        $region = \App\Models\Region::find($regionId);
+        $zones     = \App\Models\Zone::where('region_id', $regionId)->get();
+        $zoneIds   = $zones->pluck('id');
+        $subZones  = \App\Models\SubZone::whereIn('zone_id', $zoneIds)->get();
+        $churchIds = Church::whereHas('subZone', fn ($q) => $q->whereIn('zone_id', $zoneIds))->pluck('id');
+
+        return [
+            'region' => $region?->only(['id', 'name', 'code']),
+
+            'church_counts' => [
+                'per_zone'     => $zones->map(fn ($z) => [
+                    'id' => $z->id, 'name' => $z->name, 'churches' => $z->churches_count,
+                ]),
+                'per_sub_zone' => $subZones->map(fn ($sz) => [
+                    'id' => $sz->id, 'name' => $sz->name, 'churches' => $sz->churches_count,
+                ]),
+                'region_total' => $churchIds->count(),
+            ],
+
+            'structure_totals' => [
+                'zones'     => $zones->count(),
+                'sub_zones' => $subZones->count(),
+                'churches'  => $churchIds->count(),
+            ],
+
+            'asset_status'    => $this->assetStatusBreakdown($churchIds),
+            'leadership'      => $this->leadershipOverview($churchIds),
+            'projects'        => $this->projectsOverview($churchIds),
+            'recent_activity' => $this->recentEventsOverview($churchIds),
+        ];
+    }
+
     private function zoneStructureOverview(?string $zoneId): array
     {
         $zone     = \App\Models\Zone::with('region')->find($zoneId);
@@ -468,6 +540,31 @@ class AnalyticsService
             'structure_totals' => [
                 'sub_zones' => $subZones->count(),
                 'churches'  => $churchIds->count(),
+            ],
+
+            'asset_status'    => $this->assetStatusBreakdown($churchIds),
+            'leadership'      => $this->leadershipOverview($churchIds),
+            'projects'        => $this->projectsOverview($churchIds),
+            'recent_activity' => $this->recentEventsOverview($churchIds),
+        ];
+    }
+
+    private function subZoneStructureOverview(?string $subZoneId): array
+    {
+        $subZone   = \App\Models\SubZone::with('zone.region')->find($subZoneId);
+        $churches  = Church::where('sub_zone_id', $subZoneId)->get(['id', 'name', 'land_status', 'building_status']);
+        $churchIds = $churches->pluck('id');
+
+        return [
+            'sub_zone' => $subZone?->only(['id', 'name', 'code']),
+
+            'church_counts' => [
+                'churches'       => $churches->map(fn ($c) => ['id' => $c->id, 'name' => $c->name]),
+                'sub_zone_total' => $churches->count(),
+            ],
+
+            'structure_totals' => [
+                'churches' => $churches->count(),
             ],
 
             'asset_status'    => $this->assetStatusBreakdown($churchIds),

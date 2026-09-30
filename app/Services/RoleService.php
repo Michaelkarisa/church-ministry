@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\ActivityLog;
-use App\Models\Church;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
@@ -16,7 +15,8 @@ class RoleService
     // ---------------------------------------------------------------
 
     /**
-     * Return all roles ordered by hierarchy level (ministry → zone → church).
+     * Return all roles ordered by hierarchy level
+     * (ministry -> region -> zone -> sub-zone -> church).
      */
     public function listRoles(): Collection
     {
@@ -26,14 +26,16 @@ class RoleService
     /**
      * Return a paginated list of users the actor is authorised to manage.
      *
-     * MinistryAdmin → all users except other MinistryAdmins.
-     * ZoneAdmin     → ChurchAdmins whose church/zone belongs to the actor's zone.
+     * MinistryAdmin -> everyone except other MinistryAdmins.
+     * Any other admin -> only users whose role sits strictly below
+     * theirs AND whose own assignment falls within the actor's branch
+     * of the hierarchy (see User::resolved*Id()).
      *
      * Accepted filters: search, role_id, is_active (bool|null)
      */
     public function listManagedUsers(User $actor, array $filters, int $perPage): LengthAwarePaginator
     {
-        $query = User::with(['role', 'zone', 'church'])
+        $query = User::with(['role', 'region', 'zone', 'subZone', 'church'])
             ->when($filters['search'] ?? null, fn ($q, $v) =>
                 $q->where('name', 'like', "%{$v}%")
                   ->orWhere('email', 'like', "%{$v}%")
@@ -42,24 +44,35 @@ class RoleService
             ->when(isset($filters['is_active']), fn ($q) => $q->where('is_active', $filters['is_active']));
 
         if ($actor->isMinistryAdmin()) {
-            // See everyone except fellow ministry admins
             $ministryAdminRole = Role::where('name', Role::MINISTRY_ADMIN)->first();
             if ($ministryAdminRole) {
                 $query->where('role_id', '!=', $ministryAdminRole->id)
                       ->orWhereNull('role_id');
             }
             $query->where('id', '!=', $actor->id);
-        } else {
-            // ZoneAdmin: only ChurchAdmins within their zone
-            $churchAdminRole = Role::where('name', Role::CHURCH_ADMIN)->first();
-            $churchIds       = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $actor->zone_id))->pluck('id');
 
-            $query->where('role_id', $churchAdminRole?->id)
-                  ->where(fn ($q) =>
-                      $q->where('zone_id', $actor->zone_id)
-                        ->orWhereIn('church_id', $churchIds)
-                  );
+            return $query->orderBy('name')->paginate($perPage);
         }
+
+        $actorLevel = Role::LEVELS[$actor->role?->name] ?? 0;
+        $manageableRoleIds = Role::where('level', '>', $actorLevel)->pluck('id');
+        $scope = $actor->accessScope();
+
+        $query->whereIn('role_id', $manageableRoleIds)
+              ->where(function ($q) use ($scope) {
+                  match ($scope['level']) {
+                      'region' => $q->where('region_id', $scope['region_id'])
+                          ->orWhereHas('zone', fn ($z) => $z->where('region_id', $scope['region_id']))
+                          ->orWhereHas('subZone.zone', fn ($z) => $z->where('region_id', $scope['region_id']))
+                          ->orWhereHas('church.subZone.zone', fn ($z) => $z->where('region_id', $scope['region_id'])),
+                      'zone' => $q->where('zone_id', $scope['zone_id'])
+                          ->orWhereHas('subZone', fn ($z) => $z->where('zone_id', $scope['zone_id']))
+                          ->orWhereHas('church.subZone', fn ($z) => $z->where('zone_id', $scope['zone_id'])),
+                      'sub_zone' => $q->where('sub_zone_id', $scope['sub_zone_id'])
+                          ->orWhereHas('church', fn ($z) => $z->where('sub_zone_id', $scope['sub_zone_id'])),
+                      default => $q->whereRaw('1 = 0'), // church admins manage no one
+                  };
+              });
 
         return $query->orderBy('name')->paginate($perPage);
     }
@@ -74,8 +87,8 @@ class RoleService
      * Rules enforced:
      *  • Actor cannot change their own role.
      *  • Actor cannot manage a peer or superior.
-     *  • ZoneAdmin may only assign `church_admin`.
-     *  • MinistryAdmin may assign `zone_admin` or `church_admin`.
+     *  • An actor may only assign a role strictly below their own
+     *    level, to a user within their own branch of the hierarchy.
      *  • Role-switching revokes all active tokens immediately.
      *
      * Throws \DomainException on any rule violation.
@@ -110,7 +123,7 @@ class RoleService
             ]
         );
 
-        return $target->fresh()->load(['role', 'zone', 'church']);
+        return $target->fresh()->load(['role', 'region', 'zone', 'subZone', 'church']);
     }
 
     /**
@@ -147,7 +160,7 @@ class RoleService
             ]
         );
 
-        return $target->fresh()->load(['zone', 'church']);
+        return $target->fresh()->load(['region', 'zone', 'subZone', 'church']);
     }
 
     // ---------------------------------------------------------------
@@ -156,6 +169,9 @@ class RoleService
 
     /**
      * Whether the actor may manage the target user's role at all.
+     * Generalizes across all five tiers: an actor may manage any user
+     * whose role sits strictly below theirs AND whose own assignment
+     * resolves into the actor's branch of the hierarchy.
      */
     public function canManageUser(User $actor, User $target): bool
     {
@@ -164,35 +180,40 @@ class RoleService
         }
 
         if ($actor->isMinistryAdmin()) {
-            // Cannot touch other ministry admins
             return ! $target->isMinistryAdmin();
         }
 
-        if ($actor->isZoneAdmin()) {
-            // Only ChurchAdmins inside the actor's zone
-            return $this->isChurchAdminInZone($target, $actor->zone_id);
+        $actorLevel  = Role::LEVELS[$actor->role?->name] ?? 0;
+        $targetLevel = Role::LEVELS[$target->role?->name] ?? 99;
+
+        if ($targetLevel <= $actorLevel) {
+            return false;
         }
 
-        return false;
+        $scope = $actor->accessScope();
+
+        return match ($scope['level']) {
+            'region'   => $target->resolvedRegionId() === $scope['region_id'],
+            'zone'     => $target->resolvedZoneId() === $scope['zone_id'],
+            'sub_zone' => $target->resolvedSubZoneId() === $scope['sub_zone_id'],
+            default    => false, // church admins manage no one
+        };
     }
 
     /**
-     * Which roles the actor is permitted to assign.
+     * Which roles the actor is permitted to assign — any role strictly
+     * below their own level in the hierarchy.
      * Returns a keyed collection of Role records.
      */
     public function assignableRoles(User $actor): Collection
     {
-        if ($actor->isMinistryAdmin()) {
-            return Role::whereIn('name', [Role::ZONE_ADMIN, Role::CHURCH_ADMIN])
-                       ->orderBy('level')
-                       ->get();
+        $actorLevel = Role::LEVELS[$actor->role?->name] ?? 0;
+
+        if ($actorLevel === 0) {
+            return collect();
         }
 
-        if ($actor->isZoneAdmin()) {
-            return Role::where('name', Role::CHURCH_ADMIN)->get();
-        }
-
-        return collect();
+        return Role::where('level', '>', $actorLevel)->orderBy('level')->get();
     }
 
     // ---------------------------------------------------------------
@@ -229,28 +250,5 @@ class RoleService
                 403
             );
         }
-    }
-
-    /**
-     * Check whether the given user is a ChurchAdmin whose church (or zone) belongs to $zoneId.
-     */
-    private function isChurchAdminInZone(User $user, ?string $zoneId): bool
-    {
-        if (! $user->isChurchAdmin() || is_null($zoneId)) {
-            return false;
-        }
-
-        // Fast path: zone_id is set directly on the user
-        if ($user->zone_id && $user->zone_id === $zoneId) {
-            return true;
-        }
-
-        // Fallback: resolve through the assigned church
-        if ($user->church_id) {
-            $church = $user->relationLoaded('church') ? $user->church : Church::find($user->church_id);
-            return $church && $church->zone_id === $zoneId;
-        }
-
-        return false;
     }
 }

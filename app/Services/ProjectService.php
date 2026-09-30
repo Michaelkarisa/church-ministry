@@ -24,11 +24,7 @@ class ProjectService
                   ->orWhere('description', 'like', "%{$v}%")
             );
 
-        if ($user->isZoneAdmin()) {
-            $query->whereHas('church.subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('church_id', $user->church_id);
-        }
+        $query->whereHas('church', fn ($q) => $q->visibleTo($user));
 
         return $query->orderByDesc('start_date')->paginate($perPage);
     }
@@ -57,14 +53,6 @@ class ProjectService
 
     public function canAccess(User $user, Project $project): bool
     {
-        if ($user->isMinistryAdmin()) {
-            return true;
-        }
-
-        if ($user->isZoneAdmin()) {
-            return $project->church?->zone_id === $user->zone_id;
-        }
-
-        return $project->church_id === $user->church_id;
+        return $project->church && (new \App\Services\ChurchService())->canAccess($user, $project->church);
     }
 }

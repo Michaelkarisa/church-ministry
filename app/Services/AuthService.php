@@ -84,7 +84,7 @@ class AuthService
      */
     public function getProfile(User $user): array
     {
-        $user->load(['role', 'ministry', 'zone', 'church']);
+        $user->load(['role', 'ministry', 'region', 'zone', 'subZone', 'church']);
         return $this->buildUserPayload($user, detailed: true);
     }
 
@@ -145,8 +145,10 @@ class AuthService
 
         if ($detailed) {
             $base['ministry'] = Ministry::current()->only(['id', 'name', 'currency_code']);
-            $base['zone']     = $user->zone   ? $user->zone->only(['id', 'name', 'code'])   : null;
-            $base['church']   = $user->church ? $user->church->only(['id', 'name', 'code']) : null;
+            $base['region']   = $user->region  ? $user->region->only(['id', 'name', 'code'])  : null;
+            $base['zone']     = $user->zone    ? $user->zone->only(['id', 'name', 'code'])    : null;
+            $base['sub_zone'] = $user->subZone ? $user->subZone->only(['id', 'name', 'code'])  : null;
+            $base['church']   = $user->church  ? $user->church->only(['id', 'name', 'code'])  : null;
         }
 
         return $base;

@@ -31,7 +31,7 @@ Route::prefix('v1')
     ->group(function () {
 
         Route::prefix('system')
-            ->middleware(['auth:sanctum', 'zone.admin', 'rate.limit:api'])
+            ->middleware(['auth:sanctum', 'subzone.admin', 'rate.limit:api'])
             ->name('system.')
             ->group(function () {
 

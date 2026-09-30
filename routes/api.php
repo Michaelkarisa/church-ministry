@@ -69,13 +69,14 @@ Route::prefix('v1')
 
 
         // -------------------------------------------------------------------
-        // Churches — all admins view; create/delete restricted to zone admin
+        // Churches — all admins view (scoped to their branch); create/
+        // delete restricted to sub-zone admin and above.
         // -------------------------------------------------------------------
         Route::get('churches',          [ChurchController::class, 'index']);
         Route::get('churches/{church}', [ChurchController::class, 'show']);
         Route::put('churches/{church}', [ChurchController::class, 'update']);
 
-        Route::middleware('zone.admin')->group(function () {
+        Route::middleware('subzone.admin')->group(function () {
             Route::post('churches',             [ChurchController::class, 'store']);
             Route::delete('churches/{church}',  [ChurchController::class, 'destroy']);
         });
@@ -85,27 +86,39 @@ Route::prefix('v1')
 
 
         // -------------------------------------------------------------------
-        // Regions — ministry-wide structural entity; ministry admin manages,
-        // any authenticated admin can read (structural, not financial, data)
+        // Regions — each admin only ever sees the region(s) their own
+        // position in the hierarchy falls under (see RegionService::index).
+        // Create: Ministry Admin only. Update: Ministry Admin, or a Region
+        // Admin acting on their own region. Delete: Ministry Admin only.
         // -------------------------------------------------------------------
         Route::get('regions',           [RegionController::class, 'index']);
         Route::get('regions/{region}',  [RegionController::class, 'show']);
 
+        Route::middleware('region.admin')->group(function () {
+            Route::put('regions/{region}', [RegionController::class, 'update']);
+        });
+
         Route::middleware('ministry.admin')->group(function () {
             Route::post('regions',              [RegionController::class, 'store']);
-            Route::put('regions/{region}',      [RegionController::class, 'update']);
             Route::delete('regions/{region}',   [RegionController::class, 'destroy']);
         });
 
 
         // -------------------------------------------------------------------
-        // Sub-zones — zone admin manages their own; ministry admin manages all
+        // Sub-zones — read/update reachable from sub-zone admin level and
+        // above (own branch only, incl. a sub-zone admin editing their own
+        // record); create/delete require zone admin and above, since a
+        // sub-zone's parent level manages its lifecycle. Not reachable by
+        // a plain Church Administrator.
         // -------------------------------------------------------------------
-        Route::middleware('zone.admin')->group(function () {
+        Route::middleware('subzone.admin')->group(function () {
             Route::get('sub-zones',              [SubZoneController::class, 'index']);
             Route::get('sub-zones/{subZone}',    [SubZoneController::class, 'show']);
-            Route::post('sub-zones',             [SubZoneController::class, 'store']);
             Route::put('sub-zones/{subZone}',    [SubZoneController::class, 'update']);
+        });
+
+        Route::middleware('zone.admin')->group(function () {
+            Route::post('sub-zones',             [SubZoneController::class, 'store']);
             Route::delete('sub-zones/{subZone}', [SubZoneController::class, 'destroy']);
         });
 
@@ -131,16 +144,19 @@ Route::prefix('v1')
 
 
         // -------------------------------------------------------------------
-        // Zones — zone admin reads; ministry admin full CRUD
+        // Zones — read reachable from zone admin level and above (each
+        // scoped to their own branch); update: zone admin (own zone) or
+        // region/ministry above; create/delete: region admin and above
+        // only, since a zone's parent level manages its lifecycle.
         // -------------------------------------------------------------------
         Route::middleware('zone.admin')->group(function () {
             Route::get('zones',        [ZoneController::class, 'index']);
             Route::get('zones/{zone}', [ZoneController::class, 'show']);
+            Route::put('zones/{zone}', [ZoneController::class, 'update']);
         });
 
-        Route::middleware('ministry.admin')->group(function () {
+        Route::middleware('region.admin')->group(function () {
             Route::post('zones',            [ZoneController::class, 'store']);
-            Route::put('zones/{zone}',      [ZoneController::class, 'update']);
             Route::delete('zones/{zone}',   [ZoneController::class, 'destroy']);
         });
 

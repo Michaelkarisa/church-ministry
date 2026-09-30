@@ -11,7 +11,7 @@ class ChurchService
     /**
      * Return a paginated, role-scoped list of churches.
      *
-     * Accepted filters: search, sub_zone_id, zone_id, is_active (bool|null)
+     * Accepted filters: search, sub_zone_id, zone_id, region_id, is_active (bool|null)
      */
     public function index(User $user, array $filters, int $perPage): LengthAwarePaginator
     {
@@ -22,17 +22,16 @@ class ChurchService
                   ->orWhere('code', 'like', "%{$v}%")
             )
             ->when($filters['sub_zone_id'] ?? null, fn ($q, $v) => $q->where('sub_zone_id', $v))
-            // zone_id is one hop up from sub_zone_id, so it needs the nested relation
+            // zone_id / region_id are one or two hops up from sub_zone_id,
+            // so they need the nested relation.
             ->when($filters['zone_id'] ?? null, fn ($q, $v) =>
                 $q->whereHas('subZone', fn ($sq) => $sq->where('zone_id', $v))
             )
-            ->when(isset($filters['is_active']), fn ($q) => $q->where('is_active', $filters['is_active']));
-
-        if ($user->isZoneAdmin()) {
-            $query->whereHas('subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('id', $user->church_id);
-        }
+            ->when($filters['region_id'] ?? null, fn ($q, $v) =>
+                $q->whereHas('subZone.zone', fn ($sq) => $sq->where('region_id', $v))
+            )
+            ->when(isset($filters['is_active']), fn ($q) => $q->where('is_active', $filters['is_active']))
+            ->visibleTo($user);
 
         return $query->orderBy('name')->paginate($perPage);
     }
@@ -82,18 +81,38 @@ class ChurchService
     }
 
     /**
-     * Whether the given user is allowed to access this church.
+     * Whether the given user is allowed to access this church, per the
+     * five-tier hierarchy (Ministry -> Region -> Zone -> Sub-zone -> Church).
      */
     public function canAccess(User $user, Church $church): bool
     {
-        if ($user->isMinistryAdmin()) {
-            return true;
-        }
+        $scope = $user->accessScope();
 
-        if ($user->isZoneAdmin()) {
-            return $church->zone_id === $user->zone_id;
-        }
+        return match ($scope['level']) {
+            'ministry' => true,
+            'region'   => $church->region_id === $scope['region_id'],
+            'zone'     => $church->zone_id === $scope['zone_id'],
+            'sub_zone' => $church->sub_zone_id === $scope['sub_zone_id'],
+            default    => $church->id === $scope['church_id'],
+        };
+    }
 
-        return $church->id === $user->church_id;
+    /**
+     * Whether the given user may create/delete a church within the
+     * given sub-zone — a church's parent level (sub-zone admin and
+     * above) manages its lifecycle; a plain Church Administrator does not.
+     */
+    public function canManageWithinSubZone(User $user, string $subZoneId): bool
+    {
+        $scope = $user->accessScope();
+
+        return match ($scope['level']) {
+            'ministry' => true,
+            'region'   => \App\Models\SubZone::where('id', $subZoneId)
+                ->whereHas('zone', fn ($q) => $q->where('region_id', $scope['region_id']))->exists(),
+            'zone'     => \App\Models\SubZone::where('id', $subZoneId)->where('zone_id', $scope['zone_id'])->exists(),
+            'sub_zone' => $subZoneId === $scope['sub_zone_id'],
+            default    => false,
+        };
     }
 }

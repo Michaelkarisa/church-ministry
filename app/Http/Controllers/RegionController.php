@@ -8,9 +8,10 @@ use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-// Accessible by: MinistryAdmin (create/update/delete). Read access is
-// broader — any authenticated admin can view the region list, since
-// it's structural, not financial, information.
+// Read: any authenticated admin, but each only sees the region(s)
+// their own position in the hierarchy falls under (see
+// RegionService::index). Create: Ministry Admin only. Update/delete:
+// Ministry Admin, or a Region Admin acting on their own region.
 class RegionController extends Controller
 {
     use ApiResponse;
@@ -56,16 +57,20 @@ class RegionController extends Controller
     }
 
     /** GET /api/regions/{region} */
-    public function show(Region $region): JsonResponse
+    public function show(Request $request, Region $region): JsonResponse
     {
+        if (! $this->regionService->canView($request->user(), $region)) {
+            return $this->forbiddenResponse();
+        }
+
         return $this->successResponse($this->regionService->show($region));
     }
 
     /** PUT /api/regions/{region} */
     public function update(Request $request, Region $region): JsonResponse
     {
-        if (! $request->user()->isMinistryAdmin()) {
-            return $this->forbiddenResponse('Only Ministry Administrators can update regions.');
+        if (! $this->regionService->canManage($request->user(), $region)) {
+            return $this->forbiddenResponse('You can only update your own region.');
         }
 
         $data = $request->validate([
@@ -85,6 +90,8 @@ class RegionController extends Controller
     /** DELETE /api/regions/{region} */
     public function destroy(Request $request, Region $region): JsonResponse
     {
+        // Deleting is Ministry Admin only, even for a Region Admin's own
+        // region — removing structure is more consequential than editing it.
         if (! $request->user()->isMinistryAdmin()) {
             return $this->forbiddenResponse('Only Ministry Administrators can delete regions.');
         }

@@ -26,6 +26,7 @@ class ChurchController extends Controller
                 'search'      => $request->search,
                 'sub_zone_id' => $request->sub_zone_id,
                 'zone_id'     => $request->zone_id,
+                'region_id'   => $request->region_id,
                 'is_active'   => $request->filled('is_active') ? $request->boolean('is_active') : null,
             ],
             $perPage,
@@ -39,15 +40,8 @@ class ChurchController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isZoneAdmin()) {
-            // Confirm the target sub-zone actually belongs to the admin's zone.
-            $belongsToZone = \App\Models\SubZone::where('id', $request->sub_zone_id)
-                ->where('zone_id', $user->zone_id)
-                ->exists();
-
-            if (! $belongsToZone) {
-                return $this->forbiddenResponse('You can only create churches within your zone.');
-            }
+        if (! $this->churchService->canManageWithinSubZone($user, $request->sub_zone_id)) {
+            return $this->forbiddenResponse('You can only create churches within your own branch of the hierarchy.');
         }
 
         $church = $this->churchService->store($request->validated());
@@ -93,8 +87,12 @@ class ChurchController extends Controller
     }
 
     /** DELETE /api/churches/{church} */
-    public function destroy(Church $church): JsonResponse
+    public function destroy(Request $request, Church $church): JsonResponse
     {
+        if (! $this->churchService->canManageWithinSubZone($request->user(), $church->sub_zone_id)) {
+            return $this->forbiddenResponse();
+        }
+
         try {
             $this->churchService->destroy($church);
             return $this->noContentResponse('Church deleted successfully.');

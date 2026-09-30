@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SubZone;
+use App\Models\Zone;
 use App\Services\SubZoneService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -14,7 +15,7 @@ class SubZoneController extends Controller
 
     public function __construct(private SubZoneService $subZoneService) {}
 
-    /** GET /api/sub-zones */
+    /** GET /api/sub-zones — each admin sees only their own branch (see SubZoneService::index) */
     public function index(Request $request): JsonResponse
     {
         $perPage = min((int) $request->get('per_page', 15), 100);
@@ -24,6 +25,7 @@ class SubZoneController extends Controller
             [
                 'search'    => $request->search,
                 'zone_id'   => $request->zone_id,
+                'region_id' => $request->region_id,
                 'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
             ],
             $perPage,
@@ -32,14 +34,10 @@ class SubZoneController extends Controller
         return $this->successResponse($paginator);
     }
 
-    /** POST /api/sub-zones */
+    /** POST /api/sub-zones — zone admin and above (a sub-zone's parent level creates it) */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-
-        if (! $user->isMinistryAdmin() && ! $user->isZoneAdmin()) {
-            return $this->forbiddenResponse('Only Ministry or Zone Administrators can create sub-zones.');
-        }
 
         $data = $request->validate([
             'zone_id'   => ['required', 'exists:zones,id'],
@@ -51,8 +49,8 @@ class SubZoneController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        if ($user->isZoneAdmin() && $data['zone_id'] !== $user->zone_id) {
-            return $this->forbiddenResponse('You can only create sub-zones within your own zone.');
+        if (! $this->subZoneService->canManageWithinZone($user, $data['zone_id'])) {
+            return $this->forbiddenResponse('You can only create sub-zones within your own zone or region.');
         }
 
         $subZone = $this->subZoneService->store($data);
@@ -70,12 +68,10 @@ class SubZoneController extends Controller
         return $this->successResponse($this->subZoneService->show($subZone));
     }
 
-    /** PUT /api/sub-zones/{subZone} */
+    /** PUT /api/sub-zones/{subZone} — its own admin may edit it, or anyone above them in its branch */
     public function update(Request $request, SubZone $subZone): JsonResponse
     {
-        $user = $request->user();
-
-        if (! $user->isMinistryAdmin() && ! ($user->isZoneAdmin() && $subZone->zone_id === $user->zone_id)) {
+        if (! $this->subZoneService->canAccess($request->user(), $subZone)) {
             return $this->forbiddenResponse();
         }
 
@@ -93,13 +89,11 @@ class SubZoneController extends Controller
         return $this->successResponse($subZone, 'Sub-zone updated successfully.');
     }
 
-    /** DELETE /api/sub-zones/{subZone} */
+    /** DELETE /api/sub-zones/{subZone} — zone admin and above only (not the sub-zone admin themselves) */
     public function destroy(Request $request, SubZone $subZone): JsonResponse
     {
-        $user = $request->user();
-
-        if (! $user->isMinistryAdmin() && ! ($user->isZoneAdmin() && $subZone->zone_id === $user->zone_id)) {
-            return $this->forbiddenResponse();
+        if (! $this->subZoneService->canManageWithinZone($request->user(), $subZone->zone_id)) {
+            return $this->forbiddenResponse('Only the parent zone/region/ministry administrator can delete a sub-zone.');
         }
 
         try {

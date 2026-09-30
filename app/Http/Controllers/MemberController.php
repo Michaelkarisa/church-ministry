@@ -39,9 +39,10 @@ class MemberController extends Controller
     public function store(StoreMemberRequest $request): JsonResponse
     {
         $user = $request->user();
+        $targetChurch = \App\Models\Church::find($request->church_id);
 
-        if ($user->isChurchAdmin() && $request->church_id !== $user->church_id) {
-            return $this->forbiddenResponse('You can only add members to your own church.');
+        if (! $targetChurch || ! (new \App\Services\ChurchService())->canAccess($user, $targetChurch)) {
+            return $this->forbiddenResponse('You can only add members to churches in your own branch.');
         }
 
         $member = $this->memberService->store($request->validated());

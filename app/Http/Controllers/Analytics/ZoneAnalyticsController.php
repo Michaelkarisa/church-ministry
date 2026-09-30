@@ -56,7 +56,20 @@ class ZoneAnalyticsController extends Controller
             return $user->zone_id;
         }
 
-        // Ministry admin can specify zone
-        return $request->zone_id ?: null;
+        // Region/Ministry admins can specify a zone within their own branch.
+        $zoneId = $request->zone_id;
+        if (! $zoneId) {
+            return null;
+        }
+
+        if ($user->isRegionAdmin()) {
+            $inRegion = \App\Models\Zone::where('id', $zoneId)
+                ->where('region_id', $user->region_id)
+                ->exists();
+            return $inRegion ? $zoneId : null;
+        }
+
+        // Ministry admin — any zone
+        return $zoneId;
     }
 }

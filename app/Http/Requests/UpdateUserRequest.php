@@ -19,7 +19,9 @@ class UpdateUserRequest extends FormRequest
             'password'  => ['sometimes', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
             'role_id'   => ['sometimes', 'exists:roles,id'],
             // ministry_id is immutable — always the single ministry
-            'zone_id'   => ['nullable', 'exists:zones,id'],
+            'region_id'   => ['nullable', 'exists:regions,id'],
+            'zone_id'     => ['nullable', 'exists:zones,id'],
+            'sub_zone_id' => ['nullable', 'exists:sub_zones,id'],
             'church_id' => ['nullable', 'exists:churches,id'],
             'phone'     => ['nullable', 'string', 'max:20'],
             'is_active' => ['boolean'],

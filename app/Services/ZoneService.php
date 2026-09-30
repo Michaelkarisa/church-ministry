@@ -10,7 +10,8 @@ use Illuminate\Pagination\LengthAwarePaginator;
 class ZoneService
 {
     /**
-     * Return a paginated, role-scoped list of zones.
+     * Return a paginated list of zones, restricted to the user's own
+     * branch of the hierarchy.
      *
      * Accepted filters: search, region_id, is_active (bool|null)
      */
@@ -31,17 +32,18 @@ class ZoneService
             ->when($filters['region_id'] ?? null, fn ($q, $v) => $q->where('region_id', $v))
             ->when(isset($filters['is_active']), fn ($q) => $q->where('is_active', $filters['is_active']));
 
-        // Zone admins only see their own zone
-        if ($user->isZoneAdmin()) {
-            $query->where('id', $user->zone_id);
-        }
+        $scope = $user->accessScope();
+        match ($scope['level']) {
+            'ministry' => null,
+            'region'   => $query->where('region_id', $scope['region_id']),
+            'zone'     => $query->where('id', $scope['zone_id']),
+            'sub_zone' => $query->whereHas('subZones', fn ($q) => $q->where('id', $scope['sub_zone_id'])),
+            default    => $query->whereHas('subZones.churches', fn ($q) => $q->where('id', $scope['church_id'])),
+        };
 
         return $query->orderBy('name')->paginate($perPage);
     }
 
-    /**
-     * Create a zone under the given region.
-     */
     public function store(array $data): Zone
     {
         return Zone::create($data);
@@ -58,9 +60,6 @@ class ZoneService
         ]);
     }
 
-    /**
-     * Update zone fields and return the refreshed model.
-     */
     public function update(Zone $zone, array $data): Zone
     {
         $zone->update($data);
@@ -81,5 +80,55 @@ class ZoneService
         }
 
         $zone->delete();
+    }
+
+    /**
+     * Whether the given user's position in the hierarchy falls
+     * anywhere under this zone (used to gate by-id read access).
+     */
+    public function canAccess(User $user, Zone $zone): bool
+    {
+        $scope = $user->accessScope();
+
+        return match ($scope['level']) {
+            'ministry' => true,
+            'region'   => $zone->region_id === $scope['region_id'],
+            'zone'     => $zone->id === $scope['zone_id'],
+            'sub_zone' => \App\Models\SubZone::where('id', $scope['sub_zone_id'])->where('zone_id', $zone->id)->exists(),
+            default    => Church::where('id', $scope['church_id'])
+                ->whereHas('subZone', fn ($q) => $q->where('zone_id', $zone->id))->exists(),
+        };
+    }
+
+    /**
+     * Whether the given user may edit this specific zone — its own
+     * zone admin, or anyone above them in its branch.
+     */
+    public function canManage(User $user, Zone $zone): bool
+    {
+        $scope = $user->accessScope();
+
+        return match ($scope['level']) {
+            'ministry' => true,
+            'region'   => $zone->region_id === $scope['region_id'],
+            'zone'     => $zone->id === $scope['zone_id'],
+            default    => false,
+        };
+    }
+
+    /**
+     * Whether the given user may create/delete a zone within the given
+     * region — a zone's parent level (region admin and above) manages
+     * its lifecycle.
+     */
+    public function canManageWithinRegion(User $user, string $regionId): bool
+    {
+        $scope = $user->accessScope();
+
+        return match ($scope['level']) {
+            'ministry' => true,
+            'region'   => $regionId === $scope['region_id'],
+            default    => false,
+        };
     }
 }

@@ -40,6 +40,34 @@ class Church extends Model
         return $this->belongsTo(SubZone::class);
     }
 
+    /**
+     * Scope a Church query to what the given user is allowed to see,
+     * mirroring User::applyScope() but for querying Church itself
+     * (which has no church_id column to filter on).
+     *
+     *   Ministry admin  -> unrestricted
+     *   Region admin    -> churches under any zone/sub-zone in their region
+     *   Zone admin      -> churches under any sub-zone in their zone
+     *   Sub-zone admin  -> churches directly in their sub-zone
+     *   Church admin    -> their single church
+     */
+    public function scopeVisibleTo($query, User $user)
+    {
+        $scope = $user->accessScope();
+
+        return match ($scope['level']) {
+            'ministry' => $query,
+            'region'   => $query->whereHas('subZone.zone', fn ($q) =>
+                              $q->where('region_id', $scope['region_id'])
+                          ),
+            'zone'     => $query->whereHas('subZone', fn ($q) =>
+                              $q->where('zone_id', $scope['zone_id'])
+                          ),
+            'sub_zone' => $query->where('sub_zone_id', $scope['sub_zone_id']),
+            default    => $query->where('id', $scope['church_id']),
+        };
+    }
+
     public function members(): HasMany
     {
         return $this->hasMany(Member::class);

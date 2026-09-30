@@ -19,7 +19,9 @@ return new class extends Migration
 
             // all other FKs reference UUID tables
             $table->foreignUuid('ministry_id')->nullable()->constrained('ministries')->nullOnDelete();
+            $table->foreignUuid('region_id')->nullable()->constrained('regions')->nullOnDelete();
             $table->foreignUuid('zone_id')->nullable()->constrained('zones')->nullOnDelete();
+            $table->foreignUuid('sub_zone_id')->nullable()->constrained('sub_zones')->nullOnDelete();
             $table->foreignUuid('church_id')->nullable()->constrained('churches')->nullOnDelete();
 
             $table->string('phone', 20)->nullable();

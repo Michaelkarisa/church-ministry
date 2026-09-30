@@ -54,16 +54,18 @@ class ChurchAnalyticsController extends Controller
             return $user->church_id;
         }
 
-        // Zone/Ministry admins can query a specific church
+        // Region/Zone/Sub-zone/Ministry admins can query a specific church
+        // within their own branch of the hierarchy.
         $churchId = $request->church_id;
-
-        if ($user->isZoneAdmin()) {
-            $church = \App\Models\Church::find($churchId);
-            if (! $church || $church->zone_id !== $user->zone_id) return null;
-            return $churchId;
+        if (! $churchId) {
+            return null;
         }
 
-        // Ministry admin — any church
-        return $churchId ?: null;
+        $church = \App\Models\Church::find($churchId);
+        if (! $church) {
+            return null;
+        }
+
+        return (new \App\Services\ChurchService())->canAccess($user, $church) ? $churchId : null;
     }
 }

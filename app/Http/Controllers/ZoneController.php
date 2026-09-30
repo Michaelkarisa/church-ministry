@@ -15,7 +15,7 @@ class ZoneController extends Controller
 
     public function __construct(private ZoneService $zoneService) {}
 
-    /** GET /api/zones */
+    /** GET /api/zones — each admin sees only their own branch (see ZoneService::index) */
     public function index(Request $request): JsonResponse
     {
         $perPage = min((int) $request->get('per_page', 15), 100);
@@ -24,6 +24,7 @@ class ZoneController extends Controller
             $request->user(),
             [
                 'search'    => $request->search,
+                'region_id' => $request->region_id,
                 'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
             ],
             $perPage,
@@ -32,9 +33,13 @@ class ZoneController extends Controller
         return $this->successResponse($paginator);
     }
 
-    /** POST /api/zones */
+    /** POST /api/zones — region admin and above (a zone's parent level creates it) */
     public function store(StoreZoneRequest $request): JsonResponse
     {
+        if (! $this->zoneService->canManageWithinRegion($request->user(), $request->region_id)) {
+            return $this->forbiddenResponse('You can only create zones within your own region.');
+        }
+
         $zone = $this->zoneService->store($request->validated());
 
         return $this->createdResponse($zone, 'Zone created successfully.');
@@ -43,18 +48,20 @@ class ZoneController extends Controller
     /** GET /api/zones/{zone} */
     public function show(Request $request, Zone $zone): JsonResponse
     {
-        $user = $request->user();
-
-        if ($user->isZoneAdmin() && $user->zone_id !== $zone->id) {
+        if (! $this->zoneService->canAccess($request->user(), $zone)) {
             return $this->forbiddenResponse();
         }
 
         return $this->successResponse($this->zoneService->show($zone));
     }
 
-    /** PUT /api/zones/{zone} */
+    /** PUT /api/zones/{zone} — its own admin may edit it, or anyone above them in its branch */
     public function update(Request $request, Zone $zone): JsonResponse
     {
+        if (! $this->zoneService->canManage($request->user(), $zone)) {
+            return $this->forbiddenResponse();
+        }
+
         $request->validate([
             'name'      => ['sometimes', 'string', 'max:150'],
             'code'      => ['sometimes', 'string', 'max:20', 'unique:zones,code,' . $zone->id],
@@ -70,9 +77,13 @@ class ZoneController extends Controller
         return $this->successResponse($zone, 'Zone updated successfully.');
     }
 
-    /** DELETE /api/zones/{zone} */
-    public function destroy(Zone $zone): JsonResponse
+    /** DELETE /api/zones/{zone} — region admin and above only (not the zone admin themselves) */
+    public function destroy(Request $request, Zone $zone): JsonResponse
     {
+        if (! $this->zoneService->canManageWithinRegion($request->user(), $zone->region_id)) {
+            return $this->forbiddenResponse('Only the parent region/ministry administrator can delete a zone.');
+        }
+
         try {
             $this->zoneService->destroy($zone);
             return $this->noContentResponse('Zone deleted successfully.');

@@ -41,12 +41,7 @@ class TransactionService
                   ->orWhere('description', 'like', "%{$v}%")
             );
 
-        if ($user->isZoneAdmin()) {
-            $churchIds = Church::whereHas('subZone', fn ($q) => $q->where('zone_id', $user->zone_id))->pluck('id');
-            $query->whereIn('church_id', $churchIds);
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('church_id', $user->church_id);
-        }
+        $query->whereHas('church', fn ($q) => $q->visibleTo($user));
 
         return $query->orderByDesc('transaction_date')->orderByDesc('id')->paginate($perPage);
     }
@@ -209,15 +204,7 @@ class TransactionService
      */
     public function canAccess(User $user, Transaction $transaction): bool
     {
-        if ($user->isMinistryAdmin()) {
-            return true;
-        }
-
-        if ($user->isZoneAdmin()) {
-            return $transaction->church?->zone_id === $user->zone_id;
-        }
-
-        return $transaction->church_id === $user->church_id;
+        return $transaction->church && (new \App\Services\ChurchService())->canAccess($user, $transaction->church);
     }
 
     // ---------------------------------------------------------------

@@ -24,11 +24,7 @@ class EventService
                 fn ($q) => $q->whereBetween('event_date', [$filters['from'], $filters['to']])
             );
 
-        if ($user->isZoneAdmin()) {
-            $query->whereHas('church.subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('church_id', $user->church_id);
-        }
+        $query->whereHas('church', fn ($q) => $q->visibleTo($user));
 
         return $query->orderByDesc('event_date')->paginate($perPage);
     }
@@ -63,14 +59,6 @@ class EventService
 
     public function canAccess(User $user, Event $event): bool
     {
-        if ($user->isMinistryAdmin()) {
-            return true;
-        }
-
-        if ($user->isZoneAdmin()) {
-            return $event->church?->zone_id === $user->zone_id;
-        }
-
-        return $event->church_id === $user->church_id;
+        return $event->church && (new \App\Services\ChurchService())->canAccess($user, $event->church);
     }
 }

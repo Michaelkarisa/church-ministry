@@ -27,11 +27,7 @@ class MemberService
             ->when($filters['gender'] ?? null, fn ($q, $v) => $q->where('gender', $v))
             ->when($filters['church_id'] ?? null, fn ($q, $v) => $q->where('church_id', $v));
 
-        if ($user->isZoneAdmin()) {
-            $query->whereHas('church.subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('church_id', $user->church_id);
-        }
+        $query->whereHas('church', fn ($q) => $q->visibleTo($user));
 
         return $query->orderBy('first_name')->orderBy('last_name')->paginate($perPage);
     }
@@ -74,14 +70,6 @@ class MemberService
      */
     public function canAccess(User $user, Member $member): bool
     {
-        if ($user->isMinistryAdmin()) {
-            return true;
-        }
-
-        if ($user->isZoneAdmin()) {
-            return $member->church->zone_id === $user->zone_id;
-        }
-
-        return $member->church_id === $user->church_id;
+        return $member->church && (new \App\Services\ChurchService())->canAccess($user, $member->church);
     }
 }

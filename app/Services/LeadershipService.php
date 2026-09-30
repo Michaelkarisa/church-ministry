@@ -62,24 +62,12 @@ class LeadershipService
 
     public function canAccess(User $user, Leadership $leadership): bool
     {
-        if ($user->isMinistryAdmin()) {
-            return true;
-        }
-
-        if ($user->isZoneAdmin()) {
-            return $leadership->church?->zone_id === $user->zone_id;
-        }
-
-        return $leadership->church_id === $user->church_id;
+        return $leadership->church && (new \App\Services\ChurchService())->canAccess($user, $leadership->church);
     }
 
     private function scopeToUser($query, User $user): void
     {
-        if ($user->isZoneAdmin()) {
-            $query->whereHas('church.subZone', fn ($q) => $q->where('zone_id', $user->zone_id));
-        } elseif ($user->isChurchAdmin()) {
-            $query->where('church_id', $user->church_id);
-        }
+        $query->whereHas('church', fn ($q) => $q->visibleTo($user));
     }
 
     /** Only one leader per church may be flagged primary at a time. */

@@ -17,7 +17,9 @@ class StoreUserRequest extends FormRequest
             'password'  => ['required', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
             'role_id'   => ['required', 'exists:roles,id'],
             // ministry_id is always auto-assigned from Ministry::currentId()
-            'zone_id'   => ['nullable', 'exists:zones,id'],
+            'region_id'   => ['nullable', 'exists:regions,id'],
+            'zone_id'     => ['nullable', 'exists:zones,id'],
+            'sub_zone_id' => ['nullable', 'exists:sub_zones,id'],
             'church_id' => ['nullable', 'exists:churches,id'],
             'phone'     => ['nullable', 'string', 'max:20'],
             'is_active' => ['boolean'],
