@@ -11,18 +11,20 @@ class UserService
     /**
      * Return a paginated list of users.
      *
-     * Accepted filters: search, role_id, zone_id, church_id, is_active (bool|null)
+     * Accepted filters: search, role_id, region_id, zone_id, sub_zone_id, church_id, is_active (bool|null)
      */
     public function index(array $filters, int $perPage): LengthAwarePaginator
     {
-        return User::with('role')
+        return User::with(['role', 'region', 'zone', 'subZone', 'church'])
             ->when($filters['search'] ?? null, fn ($q, $v) =>
                 $q->where('name', 'like', "%{$v}%")
                   ->orWhere('email', 'like', "%{$v}%")
             )
-            ->when($filters['role_id'] ?? null,   fn ($q, $v) => $q->where('role_id',   $v))
-            ->when($filters['zone_id'] ?? null,   fn ($q, $v) => $q->where('zone_id',   $v))
-            ->when($filters['church_id'] ?? null, fn ($q, $v) => $q->where('church_id', $v))
+            ->when($filters['role_id'] ?? null,     fn ($q, $v) => $q->where('role_id',     $v))
+            ->when($filters['region_id'] ?? null,   fn ($q, $v) => $q->where('region_id',   $v))
+            ->when($filters['zone_id'] ?? null,     fn ($q, $v) => $q->where('zone_id',     $v))
+            ->when($filters['sub_zone_id'] ?? null, fn ($q, $v) => $q->where('sub_zone_id', $v))
+            ->when($filters['church_id'] ?? null,   fn ($q, $v) => $q->where('church_id',   $v))
             ->when(isset($filters['is_active']), fn ($q) => $q->where('is_active', $filters['is_active']))
             ->orderBy('name')
             ->paginate($perPage);
@@ -42,7 +44,7 @@ class UserService
      */
     public function show(User $user): User
     {
-        return $user->load(['role', 'zone', 'church']);
+        return $user->load(['role', 'region', 'zone', 'subZone', 'church']);
     }
 
     /**

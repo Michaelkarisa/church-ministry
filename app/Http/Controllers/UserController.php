@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Models\User;
+use App\Services\RoleService;
 use App\Services\UserService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -14,7 +15,24 @@ class UserController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private UserService $userService) {}
+    public function __construct(
+        private UserService $userService,
+        private RoleService $roleService,
+    ) {}
+
+    /**
+     * GET /api/users/roles
+     * All five roles, ordered by hierarchy level — powers the role
+     * picker when creating/editing a user. (Distinct from
+     * /system/roles, which returns only the roles the *caller* is
+     * allowed to delegate; this endpoint is ministry-admin-only and
+     * always returns the full list, since Ministry Admin may create a
+     * user at any level, including another Ministry Admin.)
+     */
+    public function roles(): JsonResponse
+    {
+        return $this->successResponse($this->roleService->listRoles());
+    }
 
     /** GET /api/users */
     public function index(Request $request): JsonResponse
@@ -23,11 +41,13 @@ class UserController extends Controller
 
         $paginator = $this->userService->index(
             [
-                'search'    => $request->search,
-                'role_id'   => $request->role_id,
-                'zone_id'   => $request->zone_id,
-                'church_id' => $request->church_id,
-                'is_active' => $request->filled('is_active') ? $request->boolean('is_active') : null,
+                'search'      => $request->search,
+                'role_id'     => $request->role_id,
+                'region_id'   => $request->region_id,
+                'zone_id'     => $request->zone_id,
+                'sub_zone_id' => $request->sub_zone_id,
+                'church_id'   => $request->church_id,
+                'is_active'   => $request->filled('is_active') ? $request->boolean('is_active') : null,
             ],
             $perPage,
         );
