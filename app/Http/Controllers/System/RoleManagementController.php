@@ -55,7 +55,7 @@ class RoleManagementController extends Controller
      */
     public function listManagedUsers(Request $request): JsonResponse
     {
-        $perPage = min((int) $request->get('per_page', 15), 100);
+        $perPage = min((int) $request->input('per_page', 15), 100);
 
         $paginator = $this->roleService->listManagedUsers(
             $request->user(),

@@ -18,7 +18,7 @@ class EventController extends Controller
     /** GET /api/events */
     public function index(Request $request): JsonResponse
     {
-        $perPage = min((int) $request->get('per_page', 15), 100);
+        $perPage = min((int) $request->input('per_page', 15), 100);
 
         $paginator = $this->eventService->index(
             $request->user(),
@@ -103,5 +103,10 @@ class EventController extends Controller
         $this->eventService->destroy($event);
 
         return $this->noContentResponse('Event deleted successfully.');
+    }
+
+    public function contributions(Event $event):JsonResponse
+    {
+        return $this->successResponse($this->eventService->contributions($event));
     }
 }

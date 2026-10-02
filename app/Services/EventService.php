@@ -61,4 +61,9 @@ class EventService
     {
         return $event->church && (new \App\Services\ChurchService())->canAccess($user, $event->church);
     }
+
+    public function contributions(Event $event)
+    {
+       return $event->contributions();
+    }
 }

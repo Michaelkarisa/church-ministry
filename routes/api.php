@@ -5,8 +5,6 @@ use App\Http\Controllers\Analytics\ChurchAnalyticsController;
 use App\Http\Controllers\Analytics\MinistryAnalyticsController;
 use App\Http\Controllers\Analytics\StructureAnalyticsController;
 use App\Http\Controllers\Analytics\ZoneAnalyticsController;
-use App\Http\Controllers\Auth\AuthController;
-use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\ChurchController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\LeadershipController;
@@ -48,7 +46,7 @@ Route::prefix('v1')
 
 
         // -------------------------------------------------------------------
-        // Transactions — core financial recording (all admins, scoped by role)
+        // Transactions — core financial recording (all admins, scoped by role) //*transactions belong to an event*//
         // -------------------------------------------------------------------
         Route::get('transactions',                       [TransactionController::class, 'index']);
         Route::post('transactions',                      [TransactionController::class, 'store']);
@@ -135,7 +133,7 @@ Route::prefix('v1')
         // linked contributions). All admins, scoped by role.
         // -------------------------------------------------------------------
         Route::apiResource('events', EventController::class);
-
+        Route::get('events/{id}/transactions', [EventController::class,'contributions']);
 
         // -------------------------------------------------------------------
         // Projects — end_date optional; duration is always computed.

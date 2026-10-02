@@ -55,6 +55,10 @@ class Ministry extends Model
         return $this->hasMany(Region::class);
     }
 
+    public function zones(): HasMany
+    {
+        return $this->hasMany(Zone::class);
+    }
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
