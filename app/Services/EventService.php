@@ -62,8 +62,16 @@ class EventService
         return $event->church && (new \App\Services\ChurchService())->canAccess($user, $event->church);
     }
 
-    public function contributions(Event $event)
+    /**
+     * Transactions tagged to the event, newest first. Returns rows
+     * (paginated), not the relation builder.
+     */
+    public function contributions(Event $event, int $perPage = 15): LengthAwarePaginator
     {
-       return $event->contributions();
+        return $event->contributions()
+            ->with(['transactionType', 'recorder', 'member'])
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('created_at')
+            ->paginate($perPage);
     }
 }

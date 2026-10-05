@@ -105,8 +105,26 @@ class EventController extends Controller
         return $this->noContentResponse('Event deleted successfully.');
     }
 
-    public function contributions(Event $event):JsonResponse
+    /**
+     * GET /api/events/{id}/transactions
+     * Paginated list of the transactions (contributions) tagged to this
+     * event. The route parameter is {id}, so the event is looked up by hand
+     * rather than through implicit model binding.
+     */
+    public function contributions(Request $request, string $id): JsonResponse
     {
-        return $this->successResponse($this->eventService->contributions($event));
+        $event = Event::find($id);
+
+        if (! $event) {
+            return $this->notFoundResponse('Event');
+        }
+
+        if (! $this->eventService->canAccess($request->user(), $event)) {
+            return $this->forbiddenResponse();
+        }
+
+        $perPage = min((int) $request->input('per_page', 15), 100);
+
+        return $this->successResponse($this->eventService->contributions($event, $perPage));
     }
 }
