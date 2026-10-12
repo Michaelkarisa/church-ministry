@@ -25,6 +25,10 @@ class AuthService
             throw new \DomainException('Invalid credentials. Please check your email and password.', 401);
         }
 
+        if (is_null($user->role_id)) {
+            throw new \DomainException('No role is assigned to your account. Contact your administrator.', 403);
+        }
+
         if (! $user->is_active) {
             throw new \DomainException('Your account has been deactivated. Contact your administrator.', 403);
         }

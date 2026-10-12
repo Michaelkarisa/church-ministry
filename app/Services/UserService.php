@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Ministry;
+use App\Models\Role;
+use App\Support\AdminScope;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
 
@@ -35,6 +37,10 @@ class UserService
      */
     public function store(array $data): User
     {
+        // Every non-ministry admin must carry the id of the area they manage.
+        $role = Role::findOrFail($data['role_id']);
+        $data = array_merge($data, AdminScope::resolve($role, $data));
+
         $data['ministry_id'] = Ministry::currentId();
         return User::create($data);
     }
@@ -54,6 +60,18 @@ class UserService
     public function update(User $user, array $data): User
     {
         unset($data['ministry_id']);
+
+        // When the role or any area id is being changed, the result must still be
+        // valid: the area id for the (new) role present, other levels cleared.
+        $touchesScope = array_key_exists('role_id', $data)
+            || count(array_intersect(array_keys($data), AdminScope::COLUMNS)) > 0;
+        $roleId = $data['role_id'] ?? $user->role_id;
+
+        if ($touchesScope && $roleId !== null) {
+            $ids  = array_merge($user->only(AdminScope::COLUMNS), array_intersect_key($data, array_flip(AdminScope::COLUMNS)));
+            $data = array_merge($data, AdminScope::resolve(Role::findOrFail($roleId), $ids));
+        }
+
         $user->update($data);
         return $user->fresh()->load('role');
     }

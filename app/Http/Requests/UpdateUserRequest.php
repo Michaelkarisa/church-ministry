@@ -11,7 +11,8 @@ class UpdateUserRequest extends FormRequest
 
     public function rules(): array
     {
-        $userId = $this->route('user');
+        $routeUser = $this->route('user');
+        $userId = $routeUser instanceof \Illuminate\Database\Eloquent\Model ? $routeUser->getKey() : $routeUser;
 
         return [
             'name'      => ['sometimes', 'string', 'max:150'],

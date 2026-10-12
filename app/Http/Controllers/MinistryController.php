@@ -26,7 +26,7 @@ class MinistryController extends Controller
      */
     public function update(Request $request): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'name'          => ['sometimes', 'string', 'max:200'],
             'address'       => ['nullable', 'string'],
             'city'          => ['nullable', 'string', 'max:100'],
@@ -40,7 +40,7 @@ class MinistryController extends Controller
             'founded_year'  => ['nullable', 'integer', 'min:1800', 'max:' . date('Y')],
         ]);
 
-        $ministry = $this->ministryService->update($request->validated());
+        $ministry = $this->ministryService->update($validated);
 
         return $this->successResponse($ministry, 'Ministry profile updated.');
     }

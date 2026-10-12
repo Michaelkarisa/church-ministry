@@ -97,7 +97,7 @@ class RoleManagementController extends Controller
      *
      * Assign a new role to the target user.
      *
-     * Body: { "role_id": "<uuid>" }
+     * Body: { "role_id": <integer>, "<area>_id": "<uuid>" }  (area id of the new role: region_id | zone_id | sub_zone_id | church_id)
      *
      * MinistryAdmin may assign: zone_admin, church_admin
      * Any admin     may assign any role strictly below their own level,
@@ -106,7 +106,12 @@ class RoleManagementController extends Controller
     public function assignRole(Request $request, User $user): JsonResponse
     {
         $request->validate([
-            'role_id' => ['required', 'uuid', 'exists:roles,id'],
+            'role_id'     => ['required', 'integer', 'exists:roles,id'],
+            // id of the area the user will manage; required unless the user already has the right one
+            'region_id'   => ['nullable', 'exists:regions,id'],
+            'zone_id'     => ['nullable', 'exists:zones,id'],
+            'sub_zone_id' => ['nullable', 'exists:sub_zones,id'],
+            'church_id'   => ['nullable', 'exists:churches,id'],
         ]);
 
         try {
@@ -114,6 +119,7 @@ class RoleManagementController extends Controller
                 $request->user(),
                 $user,
                 $request->role_id,
+                $request->only(\App\Support\AdminScope::COLUMNS),
             );
 
             return $this->successResponse(

@@ -125,7 +125,8 @@ class IdempotencyMiddleware
         $scope = $request->user()?->id ?? $request->ip();
         $path  = $request->path();
 
-        return "idempotency:{$scope}:{$path}:{$key}";
+        // Hash path + client key: a long client key would otherwise overflow the cache key column.
+        return "idempotency:{$scope}:" . hash('sha256', $path . '|' . $key);
     }
 
     private function isExempt(Request $request): bool

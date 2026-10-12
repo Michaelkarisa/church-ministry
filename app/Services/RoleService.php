@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\AdminScope;
 use App\Models\ActivityLog;
 use App\Models\Role;
 use App\Models\User;
@@ -93,7 +94,7 @@ class RoleService
      *
      * Throws \DomainException on any rule violation.
      */
-    public function assignRole(User $actor, User $target, string $roleId): User
+    public function assignRole(User $actor, User $target, string $roleId, array $scope = []): User
     {
         $role = Role::findOrFail($roleId);
 
@@ -104,7 +105,17 @@ class RoleService
 
         $old = ['role_id' => $target->role_id, 'role_name' => $target->role?->name];
 
-        $target->update(['role_id' => $role->id]);
+        // The new role needs the id of the area it manages. Take it from the request, or keep the
+        // one the user already has; the area must lie inside the actor's own branch.
+        $given    = array_filter(array_intersect_key($scope, array_flip(AdminScope::COLUMNS)), fn ($v) => $v !== null && $v !== '');
+        $resolved = AdminScope::resolve($role, array_merge($target->only(AdminScope::COLUMNS), $given));
+
+        $needed = Role::SCOPE_COLUMNS[$role->name] ?? null;
+        if ($needed !== null && ! $this->areaInActorBranch($actor, $needed, $resolved[$needed])) {
+            throw new \DomainException('You can only assign users to areas inside your own branch of the hierarchy.', 403);
+        }
+
+        $target->update(array_merge(['role_id' => $role->id], $resolved));
 
         if ($roleChanged) {
             $target->tokens()->delete();
@@ -119,7 +130,7 @@ class RoleService
                 'record_id'   => $target->id,
                 'record_type' => 'User',
                 'old_values'  => $old,
-                'new_values'  => ['role_id' => $role->id, 'role_name' => $role->name],
+                'new_values'  => array_merge(['role_id' => $role->id, 'role_name' => $role->name], array_filter($resolved)),
             ]
         );
 
@@ -235,6 +246,42 @@ class RoleService
                 403
             );
         }
+    }
+
+    /**
+     * Is the area ($column = region_id|zone_id|sub_zone_id|church_id, $id) inside the actor's branch?
+     */
+    private function areaInActorBranch(User $actor, string $column, string $id): bool
+    {
+        if ($actor->isMinistryAdmin()) {
+            return true;
+        }
+
+        $scope = $actor->accessScope();
+        $level = $scope['level'];
+
+        return match ($column) {
+            'zone_id' => $level === 'region'
+                && \App\Models\Zone::where('id', $id)->where('region_id', $scope['region_id'])->exists(),
+
+            'sub_zone_id' => match ($level) {
+                'region' => \App\Models\SubZone::where('id', $id)
+                    ->whereHas('zone', fn ($q) => $q->where('region_id', $scope['region_id']))->exists(),
+                'zone'   => \App\Models\SubZone::where('id', $id)->where('zone_id', $scope['zone_id'])->exists(),
+                default  => false,
+            },
+
+            'church_id' => match ($level) {
+                'region'   => \App\Models\Church::where('id', $id)
+                    ->whereHas('subZone.zone', fn ($q) => $q->where('region_id', $scope['region_id']))->exists(),
+                'zone'     => \App\Models\Church::where('id', $id)
+                    ->whereHas('subZone', fn ($q) => $q->where('zone_id', $scope['zone_id']))->exists(),
+                'sub_zone' => \App\Models\Church::where('id', $id)->where('sub_zone_id', $scope['sub_zone_id'])->exists(),
+                default    => false,
+            },
+
+            default => false, // region_id: only a Ministry admin can place someone in a region
+        };
     }
 
     /**

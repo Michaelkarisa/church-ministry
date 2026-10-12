@@ -66,7 +66,7 @@ class ChurchController extends Controller
             return $this->forbiddenResponse();
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'name'               => ['sometimes', 'string', 'max:150'],
             'code'               => ['sometimes', 'string', 'max:30', 'unique:churches,code,' . $church->id],
             'address'            => ['nullable', 'string'],
@@ -81,7 +81,7 @@ class ChurchController extends Controller
             'is_active'          => ['boolean'],
         ]);
 
-        $church = $this->churchService->update($church, $request->validated());
+        $church = $this->churchService->update($church, $validated);
 
         return $this->successResponse($church, 'Church updated successfully.');
     }

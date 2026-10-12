@@ -62,7 +62,7 @@ class ZoneController extends Controller
             return $this->forbiddenResponse();
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'name'      => ['sometimes', 'string', 'max:150'],
             'code'      => ['sometimes', 'string', 'max:20', 'unique:zones,code,' . $zone->id],
             'region_id' => ['sometimes', 'exists:regions,id'],
@@ -72,7 +72,7 @@ class ZoneController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $zone = $this->zoneService->update($zone, $request->validated());
+        $zone = $this->zoneService->update($zone, $validated);
 
         return $this->successResponse($zone, 'Zone updated successfully.');
     }

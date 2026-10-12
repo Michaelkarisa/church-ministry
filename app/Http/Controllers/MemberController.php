@@ -67,7 +67,7 @@ class MemberController extends Controller
             return $this->forbiddenResponse();
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'member_number'   => ['sometimes', 'string', 'max:30', Rule::unique('members')->ignore($member->id)],
             'first_name'      => ['sometimes', 'string', 'max:100'],
             'last_name'       => ['sometimes', 'string', 'max:100'],
@@ -82,7 +82,7 @@ class MemberController extends Controller
             'is_active'       => ['boolean'],
         ]);
 
-        $member = $this->memberService->update($member, $request->validated());
+        $member = $this->memberService->update($member, $validated);
 
         return $this->successResponse($member, 'Member updated.');
     }

@@ -29,7 +29,7 @@ class TransactionTypeController extends Controller
     /** POST /api/transaction-types */
     public function store(Request $request): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'name'          => ['required', 'string', 'max:100'],
             'code'          => ['required', 'string', 'max:30', 'unique:transaction_types,code'],
             'description'   => ['nullable', 'string'],
@@ -38,7 +38,7 @@ class TransactionTypeController extends Controller
             'is_active'     => ['boolean'],
         ]);
 
-        $type = $this->transactionTypeService->store($request->validated());
+        $type = $this->transactionTypeService->store($validated);
 
         return $this->createdResponse($type, 'Transaction type created.');
     }
@@ -54,7 +54,7 @@ class TransactionTypeController extends Controller
     /** PUT /api/transaction-types/{transactionType} */
     public function update(Request $request, TransactionType $transactionType): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'name'          => ['sometimes', 'string', 'max:100'],
             'code'          => ['sometimes', 'string', 'max:30', Rule::unique('transaction_types', 'code')->ignore($transactionType->id)],
             'description'   => ['nullable', 'string'],
@@ -63,7 +63,7 @@ class TransactionTypeController extends Controller
             'is_active'     => ['boolean'],
         ]);
 
-        $type = $this->transactionTypeService->update($transactionType, $request->validated());
+        $type = $this->transactionTypeService->update($transactionType, $validated);
 
         return $this->successResponse($type, 'Transaction type updated.');
     }

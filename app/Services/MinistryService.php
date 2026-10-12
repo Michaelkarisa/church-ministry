@@ -11,7 +11,12 @@ class MinistryService
      */
     public function getCurrent(): Ministry
     {
-        return Ministry::current()->loadCount(['zones', 'churches']);
+        $ministry = Ministry::current()->loadCount('zones');
+
+        // churches() is a query builder (not a relation), so loadCount() cannot use it.
+        $ministry->setAttribute('churches_count', $ministry->churches()->count());
+
+        return $ministry;
     }
 
     /**

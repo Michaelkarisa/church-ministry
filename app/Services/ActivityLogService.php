@@ -363,16 +363,53 @@ class ActivityLogService
 
     /**
      * Apply role-based scope to any ActivityLog query builder.
+     *
+     * A viewer sees the actions of the users inside their own branch of the
+     * hierarchy (plus their own actions). Columns are qualified because some
+     * callers join the users table, which also has zone_id / church_id.
      */
     private function applyScope($query, User $actor): void
     {
         $scope = $actor->accessScope();
+        $level = $scope['level'];
 
-        match ($scope['level']) {
-            'zone'   => $query->where('zone_id', $scope['zone_id']),
-            'church' => $query->where('church_id', $scope['church_id']),
-            default  => null, // ministry → unrestricted
-        };
+        if ($level === 'ministry') {
+            return; // unrestricted
+        }
+
+        $regionIds = $zoneIds = $subZoneIds = $churchIds = null;
+
+        switch ($level) {
+            case 'region':
+                $regionIds  = [$scope['region_id']];
+                $zoneIds    = \App\Models\Zone::where('region_id', $scope['region_id'])->select('id');
+                $subZoneIds = \App\Models\SubZone::whereIn('zone_id', $zoneIds)->select('id');
+                $churchIds  = \App\Models\Church::whereIn('sub_zone_id', $subZoneIds)->select('id');
+                break;
+            case 'zone':
+                $zoneIds    = [$scope['zone_id']];
+                $subZoneIds = \App\Models\SubZone::where('zone_id', $scope['zone_id'])->select('id');
+                $churchIds  = \App\Models\Church::whereIn('sub_zone_id', $subZoneIds)->select('id');
+                break;
+            case 'sub_zone':
+                $subZoneIds = [$scope['sub_zone_id']];
+                $churchIds  = \App\Models\Church::where('sub_zone_id', $scope['sub_zone_id'])->select('id');
+                break;
+            default: // church
+                $churchIds = [$scope['church_id']];
+        }
+
+        $branchUsers = User::query()->select('users.id')->where(function ($q) use ($regionIds, $zoneIds, $subZoneIds, $churchIds) {
+            $q->whereIn('users.church_id', $churchIds);
+            if ($subZoneIds !== null) $q->orWhereIn('users.sub_zone_id', $subZoneIds);
+            if ($zoneIds    !== null) $q->orWhereIn('users.zone_id', $zoneIds);
+            if ($regionIds  !== null) $q->orWhereIn('users.region_id', $regionIds);
+        });
+
+        $query->where(function ($q) use ($actor, $branchUsers) {
+            $q->where('activity_logs.user_id', $actor->id)
+              ->orWhereIn('activity_logs.user_id', $branchUsers);
+        });
     }
 
     /**

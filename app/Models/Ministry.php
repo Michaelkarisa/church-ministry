@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RuntimeException;
 
@@ -55,9 +56,10 @@ class Ministry extends Model
         return $this->hasMany(Region::class);
     }
 
-    public function zones(): HasMany
+    /** Zones belong to regions, so reach them through regions. */
+    public function zones(): HasManyThrough
     {
-        return $this->hasMany(Zone::class);
+        return $this->hasManyThrough(Zone::class, Region::class);
     }
     public function users(): HasMany
     {

@@ -41,6 +41,17 @@ class Role extends Model
         return $this->level <= (self::LEVELS[$roleName] ?? 99);
     }
 
+    /**
+     * The users-table column that holds the area an admin of each role manages.
+     * Every non-ministry admin MUST have the id in their column filled in.
+     */
+    const SCOPE_COLUMNS = [
+        self::REGION_ADMIN   => 'region_id',
+        self::ZONE_ADMIN     => 'zone_id',
+        self::SUB_ZONE_ADMIN => 'sub_zone_id',
+        self::CHURCH_ADMIN   => 'church_id',
+    ];
+
     /** Canonical level map — lower number = broader authority. */
     const LEVELS = [
         self::MINISTRY_ADMIN => 1,
